@@ -16,9 +16,10 @@ const NAV_MAIN = [
 const SALES_SLUG = "sales";
 const FINANCE_SLUG = "finance";
 
-// «Лиды» and «Воронка продаж» are one page now — a single entry, two views.
+// The lead list/funnel and the independent sales Kanban share the same leads.
 const SALES_SUBNAV = [
   { href: "/leads",    icon: "contacts",      label: "Лиды и воронка" },
+  { href: "/leads/board", icon: "view_kanban", label: "Доска" },
   { href: "/dept/sales?meetings=1", icon: "handshake", label: "Встречи" },
   { href: "/dept/sales", icon: "bar_chart",   label: "Дневник" },
 ];
@@ -103,7 +104,7 @@ export function Shell({ children, title }: { children: React.ReactNode; title?: 
     return <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text3)" }}>Загрузка…</div>;
   }
 
-  const pageTitle = title ?? NAV_MAIN.find((n) => pathname.startsWith(n.href))?.label ?? "NevOcean";
+  const pageTitle = title ?? NAV_MAIN.find((n) => pathname.startsWith(n.href))?.label ?? "Espada";
   const totalNotifs = notifs.count;
 
   function handleSearchSelect(item: any) {
@@ -128,8 +129,8 @@ export function Shell({ children, title }: { children: React.ReactNode; title?: 
       {/* SIDEBAR */}
       <aside className={`sidebar ${sidebarOpen ? "sidebar-open" : ""}`}>
         <div className="sidebar-brand">
-          <div className="brand-logo">N</div>
-          <div><div className="brand-name">NevOcean</div><div className="brand-sub">AI Workspace</div></div>
+          <div className="brand-logo">E</div>
+          <div><div className="brand-name">Espada</div><div className="brand-sub">AI Workspace</div></div>
         </div>
 
         <nav className="sidebar-nav">
@@ -167,7 +168,7 @@ export function Shell({ children, title }: { children: React.ReactNode; title?: 
                 {salesOpen && (
                   <div className="nav-sub">
                     {SALES_SUBNAV.map((item) => (
-                      <Link key={item.href} href={item.href} className={`nav-link nav-sub-link ${pathname.startsWith(item.href) ? "active" : ""}`}>
+                      <Link key={item.href} href={item.href} className={`nav-link nav-sub-link ${(item.href === "/leads" ? pathname.startsWith("/leads") && !pathname.startsWith("/leads/board") : pathname.startsWith(item.href)) ? "active" : ""}`}>
                         <span className="material-symbols-outlined nav-ico">{item.icon}</span>
                         <span>{item.label}</span>
                       </Link>
