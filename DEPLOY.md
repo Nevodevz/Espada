@@ -108,3 +108,37 @@ docker compose --env-file .env exec -T db \
 
 Переименование репозитория не меняет DNS, сертификаты, GitHub remote или
 имя уже существующего Docker-проекта автоматически.
+
+## Shared-хост за Cloudflare Tunnel (OMV)
+
+На сервере, где порты 80/443 заняты другими проектами, а TLS терминирует
+Cloudflare Tunnel, используйте override `docker-compose.tunnel.yml`: nginx
+работает только по HTTP (`nginx/nginx.tunnel.conf`) и публикуется на порту
+`HTTP_BIND` (по умолчанию `8095`).
+
+`.env` дополнительно к обычным переменным:
+
+```dotenv
+COMPOSE_PROJECT_NAME=espacrm
+COMPOSE_FILE=docker-compose.yml:docker-compose.tunnel.yml
+HTTP_BIND=8095
+FRONTEND_URL=https://espacrm.espada.kg
+MCP_ALLOWED_HOSTS=espacrm.espada.kg,localhost:9000,127.0.0.1:9000
+MCP_ALLOWED_ORIGINS=https://espacrm.espada.kg
+```
+
+С `COMPOSE_FILE` в `.env` достаточно обычных `docker compose up -d --build`.
+В Cloudflare Zero Trust добавьте Published application route
+`espacrm.espada.kg` → `http://<хост>:8095`.
+
+### Восстановление из дампа (pg_dump -Fc)
+
+Восстанавливайте в пустую базу **до** первого запуска backend, иначе seed
+создаст демо-данные:
+
+```bash
+docker compose up -d db
+docker compose exec -T db pg_restore -U espada -d espada \
+  --no-owner --no-privileges --exit-on-error < espada.dump
+docker compose up -d --build
+```
