@@ -113,15 +113,16 @@ docker compose --env-file .env exec -T db \
 
 На сервере, где порты 80/443 заняты другими проектами, а TLS терминирует
 Cloudflare Tunnel, используйте override `docker-compose.tunnel.yml`: nginx
-работает только по HTTP (`nginx/nginx.tunnel.conf`) и публикуется на порту
-`HTTP_BIND` (по умолчанию `8095`).
+работает только по HTTP (`nginx/nginx.tunnel.conf`), не публикует порты на хост
+и подключается к общей внешней docker-сети `EDGE_NETWORK` (по умолчанию `edge`),
+где живёт контейнер cloudflared. В этой сети он доступен как `espacrm-nginx:80`.
 
 `.env` дополнительно к обычным переменным:
 
 ```dotenv
 COMPOSE_PROJECT_NAME=espacrm
 COMPOSE_FILE=docker-compose.yml:docker-compose.tunnel.yml
-HTTP_BIND=8095
+EDGE_NETWORK=edge
 FRONTEND_URL=https://espacrm.espada.kg
 MCP_ALLOWED_HOSTS=espacrm.espada.kg,localhost:9000,127.0.0.1:9000
 MCP_ALLOWED_ORIGINS=https://espacrm.espada.kg
@@ -129,7 +130,7 @@ MCP_ALLOWED_ORIGINS=https://espacrm.espada.kg
 
 С `COMPOSE_FILE` в `.env` достаточно обычных `docker compose up -d --build`.
 В Cloudflare Zero Trust добавьте Published application route
-`espacrm.espada.kg` → `http://<хост>:8095`.
+`espacrm.espada.kg` → `http://espacrm-nginx:80`.
 
 ### Восстановление из дампа (pg_dump -Fc)
 

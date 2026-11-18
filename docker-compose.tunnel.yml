@@ -1,18 +1,49 @@
 # Override for a shared host behind a Cloudflare Tunnel (OMV server).
 #
-#   docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up -d --build
+# With COMPOSE_FILE=docker-compose.yml:docker-compose.tunnel.yml in .env,
+# plain `docker compose up -d --build` picks this file up.
 #
 # Differences from the base file:
 #   - nginx speaks plain HTTP only (TLS is terminated by Cloudflare);
-#   - nginx is published on ${HTTP_BIND:-8095} instead of 80/443, which are
-#     taken by other projects on the host;
+#   - nginx publishes no host ports; it joins the shared external Docker
+#     network (${EDGE_NETWORK:-edge}) where the cloudflared container lives,
+#     and is reachable there as http://espacrm-nginx:80;
+#   - internal services get project-unique aliases, because other projects on
+#     the shared network also have services called "backend"/"frontend";
 #   - no /etc/letsencrypt or certbot mounts.
-# Requires Docker Compose >= 2.24.4 (for !override).
+# Requires Docker Compose >= 2.24.4 (for !reset / !override).
 
 services:
+  backend:
+    networks:
+      default:
+        aliases:
+          - espacrm-backend
+
+  frontend:
+    networks:
+      default:
+        aliases:
+          - espacrm-frontend
+
+  mcp:
+    networks:
+      default:
+        aliases:
+          - espacrm-mcp
+
   nginx:
-    ports: !override
-      - "${HTTP_BIND:-8095}:80"
+    ports: !reset []
     volumes: !override
       - ./nginx/nginx.tunnel.conf:/etc/nginx/conf.d/default.conf:ro
       - media:/var/www/media:ro
+    networks:
+      default:
+      edge:
+        aliases:
+          - espacrm-nginx
+
+networks:
+  edge:
+    external: true
+    name: ${EDGE_NETWORK:-edge}
