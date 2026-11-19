@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Modal } from "@/components/Modal";
 import { Button, FormField, Input, Select } from "@/components/ui";
 import type { LeadStage, User, RejectReason } from "@/lib/types";
+import { closerOptions } from "@/lib/roles";
 
 // Must mirror backend app/services/leads.py _stage_kind
 export function stageKind(
@@ -99,6 +100,7 @@ export function TransitionModal({
   onCancel,
 }: TransitionModalProps) {
   const kind = stageKind(stage);
+  const closers = closerOptions(users, card.closer_id ?? card.closer?.id ?? null);
   const [comment, setComment] = useState("");
   const [form, setForm] = useState<Record<string, unknown>>(() => initForm(kind, card));
 
@@ -188,7 +190,7 @@ export function TransitionModal({
                 onChange={(e) => set("closer_id", Number(e.target.value))}
               >
                 <option value="">— выбрать —</option>
-                {users.map((u) => (
+                {closers.map((u) => (
                   <option key={u.id} value={u.id}>
                     {u.name}
                   </option>
@@ -340,7 +342,7 @@ export function TransitionModal({
                 onChange={(e) => set("closer_id", Number(e.target.value))}
               >
                 <option value="">— выбрать —</option>
-                {users.map((u) => (
+                {closers.map((u) => (
                   <option key={u.id} value={u.id}>
                     {u.name}
                   </option>
@@ -403,7 +405,7 @@ export function TransitionModal({
                 onChange={(e) => set("closer_id", Number(e.target.value))}
               >
                 <option value="">— выбрать —</option>
-                {users.map((u) => (
+                {closers.map((u) => (
                   <option key={u.id} value={u.id}>
                     {u.name}
                   </option>

@@ -32,3 +32,23 @@ def test_admin_creates_user_as_closer(client, admin):
     })
     assert r.status_code in (200, 201), r.text
     assert r.json()["is_closer"] is True
+
+
+def test_fresh_seed_marks_closers(monkeypatch, engine):
+    """A new database is seeded after migration 022, so the seed sets the flag itself."""
+    from sqlalchemy.orm import sessionmaker
+    import app.seed as seed_module
+    from app.models import User
+
+    Session = sessionmaker(bind=engine)
+    monkeypatch.setattr(seed_module, "engine", engine)
+    monkeypatch.setattr(seed_module, "SessionLocal", Session)
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    monkeypatch.setenv("INITIAL_USER_PASSWORD", "seed-test")
+    seed_module.seed()
+
+    s = Session()
+    flags = {u.email.split("@")[0]: u.is_closer for u in s.query(User).all()}
+    s.close()
+    assert flags["adahan"] is True and flags["marlen"] is True and flags["arslan"] is True
+    assert flags["rahima"] is False

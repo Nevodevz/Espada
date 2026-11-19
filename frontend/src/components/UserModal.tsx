@@ -18,7 +18,7 @@ export function UserModal({ open, onClose, onSaved, user, departments, defaultDe
 }) {
   const [form, setForm] = useState<any>({
     name: "", email: "", password: "", position: "Сотрудник",
-    role: "staff", is_founder: false, avatar_color: "indigo", department_ids: [] as number[],
+    role: "staff", is_founder: false, is_closer: false, avatar_color: "indigo", department_ids: [] as number[],
   });
   const [saving, setSaving] = useState(false);
   const toast = useToast();
@@ -28,13 +28,13 @@ export function UserModal({ open, onClose, onSaved, user, departments, defaultDe
     if (user) {
       setForm({
         name: user.name, email: user.email, password: "", position: user.position,
-        role: user.role, is_founder: user.is_founder, avatar_color: user.avatar_color,
+        role: user.role, is_founder: user.is_founder, is_closer: Boolean(user.is_closer), avatar_color: user.avatar_color,
         department_ids: (user as any).department_ids ?? [],
       });
     } else {
       setForm({
         name: "", email: "", password: "", position: "Сотрудник",
-        role: "staff", is_founder: false, avatar_color: "indigo",
+        role: "staff", is_founder: false, is_closer: false, avatar_color: "indigo",
         department_ids: defaultDeptId ? [defaultDeptId] : [],
       });
     }
@@ -54,7 +54,7 @@ export function UserModal({ open, onClose, onSaved, user, departments, defaultDe
     try {
       const payload: any = {
         name: form.name, email: form.email, position: form.position,
-        role: form.role, is_founder: form.is_founder, avatar_color: form.avatar_color,
+        role: form.role, is_founder: form.is_founder, is_closer: form.is_closer, avatar_color: form.avatar_color,
         department_ids: form.department_ids,
       };
       if (form.password) payload.password = form.password;
@@ -123,6 +123,12 @@ export function UserModal({ open, onClose, onSaved, user, departments, defaultDe
         <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13, color: "var(--text2)" }}>
           <input type="checkbox" checked={form.is_founder} onChange={(e) => setForm({ ...form, is_founder: e.target.checked })} />
           Основатель (доступ к скрытой части)
+        </label>
+      </div>
+      <div className="field">
+        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13, color: "var(--text2)" }}>
+          <input type="checkbox" checked={form.is_closer} onChange={(e) => setForm({ ...form, is_closer: e.target.checked })} />
+          Клоузер (проводит встречи отдела продаж)
         </label>
       </div>
       <div className="field">

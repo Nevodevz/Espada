@@ -6,7 +6,8 @@ import { Avatar } from "@/components/Avatar";
 import { Modal } from "@/components/Modal";
 import { UserModal } from "@/components/UserModal";
 import { MeetingDetailModal } from "@/components/meetings/MeetingDetailModal";
-import { SalesMeetingsCalendar, isCloser } from "@/components/meetings/SalesMeetingsCalendar";
+import { SalesMeetingsCalendar } from "@/components/meetings/SalesMeetingsCalendar";
+import { closerOptions, isCloser } from "@/lib/roles";
 import { useApp } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";
 import { api, meetingApi } from "@/lib/api";
@@ -15,9 +16,6 @@ import {
   Meeting, MeetingStatus, MEETING_STATUS, MEETING_STATUS_KEYS, SalesSummary,
 } from "@/lib/types";
 import { Button, Input, Select, Textarea, FormField, DateRangePicker, ConfirmModal } from "@/components/ui";
-
-// Positions that count as a "closer" — keep in sync with backend _CLOSER_POSITIONS
-const CLOSER_POSITIONS = ["Клоузер", "Финансовый директор"];
 
 // ============================= SETTERS TABLE =============================
 function SettersSection({ dept, departments, isAdmin, currentUserId, onOpenMeetings }: {
@@ -310,7 +308,7 @@ function MeetingsTableModal({ onClose, allUsers, initUser, currentUser, isAdmin 
   isAdmin: boolean;
 }) {
   const setters = allUsers.filter((u) => u.position === "Сеттер" || u.position === "Руководитель продаж");
-  const closers = allUsers.filter((u) => isCloser(u.position));
+  const closers = closerOptions(allUsers);
 
   const [period, setPeriod] = useState<"day" | "week" | "month" | "custom">("month");
   const [customFrom, setCustomFrom] = useState("");
@@ -318,8 +316,7 @@ function MeetingsTableModal({ onClose, allUsers, initUser, currentUser, isAdmin 
   const [filterStatus, setFilterStatus] = useState<MeetingStatus | "">("");
   const [filterRole, setFilterRole] = useState<"setter" | "closer" | "all">(() => {
     if (!initUser) return "all";
-    const pos = initUser.position;
-    if (isCloser(pos)) return "closer";
+    if (isCloser(initUser)) return "closer";
     return "setter";
   });
   const [filterUserId, setFilterUserId] = useState<string>(() => initUser ? String(initUser.id) : "");

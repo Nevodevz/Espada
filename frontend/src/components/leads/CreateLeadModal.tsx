@@ -1,5 +1,6 @@
 "use client";
 
+import { closerOptions } from "@/lib/roles";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal } from "@/components/Modal";
@@ -180,7 +181,7 @@ export function CreateLeadModal({
             <FormField label="Клоузер">
               <Select value={form.closer_id} onChange={f("closer_id")}>
                 <option value="">— не назначен —</option>
-                {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                {closerOptions(users).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
               </Select>
             </FormField>
           </>

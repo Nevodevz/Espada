@@ -135,6 +135,8 @@ def seed():
             password_hash=hash_password(initial_password),
             role=Role.admin if admin else Role.staff,
             position=position, is_founder=founder,
+            # Same rule as migration 022: closers and the finance director run meetings.
+            is_closer=position in ("Клоузер", "Финансовый директор"),
             avatar_color=color, is_active=True, last_seen=None,
         )
 

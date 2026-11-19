@@ -9,6 +9,7 @@ import { TransitionModal, stageKind, STAGE_ACTION_LABELS } from "@/components/Tr
 import { useApp } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";
 import { leadApi, settingsApi, api } from "@/lib/api";
+import { closerOptions } from "@/lib/roles";
 import { PaymentScheduleSection } from "@/components/leads/PaymentSchedule";
 import {
   fmtDate, fmtDateTime, fmtMoney, fmtMoneyShort,
@@ -359,7 +360,7 @@ function EditLeadModal({ lead, sources, services, users, onClose, onSaved }: {
           <label className="form-label">Клоузер</label>
           <select className="form-input" value={form.closer_id} onChange={f("closer_id")}>
             <option value="">—</option>
-            {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+            {closerOptions(users, lead.closer_id).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
           </select>
         </div>
         <div><label className="form-label">Сумма сделки (сом)</label><input className="form-input" type="number" min={0} value={form.deal_amount} onChange={f("deal_amount")} /></div>

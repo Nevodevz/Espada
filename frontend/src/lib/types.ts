@@ -66,6 +66,8 @@ export interface User {
   avatar_url: string;
   role: Role;
   is_founder: boolean;
+  /** Conducts sales meetings; source of every «Клоузер» list. */
+  is_closer: boolean;
   is_active: boolean;
   last_seen: string | null;
   created_at: string;

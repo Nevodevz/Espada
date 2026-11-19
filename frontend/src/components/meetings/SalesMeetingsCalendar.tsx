@@ -14,11 +14,10 @@ import type {
 import { MEETING_STATUS, MEETING_STATUS_KEYS } from "@/lib/types";
 import { MeetingDetailModal } from "./MeetingDetailModal";
 import { MeetingModal } from "./MeetingModal";
+import { closerOptions } from "@/lib/roles";
 
-const CLOSER_POSITIONS = new Set(["Клоузер", "Финансовый директор"]);
 const SETTER_POSITIONS = new Set(["Сеттер", "Руководитель продаж"]);
 
-export const isCloser = (position: string) => CLOSER_POSITIONS.has(position);
 const isSetter = (position: string) => SETTER_POSITIONS.has(position);
 
 /** CRM meetings become calendar events, reusing the shared event shape. */
@@ -67,6 +66,8 @@ export function SalesMeetingsCalendar({
   });
 
   const [members, setMembers] = useState<UserWithStats[]>([]);
+  // Closers come from all employees: a closer (e.g. the finance director) need not be a sales member.
+  const [allUsers, setAllUsers] = useState<UserWithStats[]>([]);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -79,7 +80,7 @@ export function SalesMeetingsCalendar({
   const [presetStart, setPresetStart] = useState<string | null>(null);
   const [selected, setSelected] = useState<Meeting | null>(null);
 
-  const closers = useMemo(() => members.filter((u) => isCloser(u.position)), [members]);
+  const closers = useMemo(() => closerOptions(allUsers), [allUsers]);
   const setters = useMemo(() => members.filter((u) => isSetter(u.position)), [members]);
 
   const canCreate = isAdmin
@@ -114,6 +115,7 @@ export function SalesMeetingsCalendar({
 
   useEffect(() => {
     api.listUsers(dept.id).then(setMembers).catch(() => {});
+    api.listUsers().then(setAllUsers).catch(() => {});
   }, [dept.id]);
 
   const events = useMemo(() => meetings.map(toEvent), [meetings]);
