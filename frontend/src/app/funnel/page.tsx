@@ -5,5 +5,5 @@ import { redirect } from "next/navigation";
  * links and bookmarks land on the funnel view instead of breaking.
  */
 export default function FunnelRedirectPage() {
-  redirect("/leads?view=funnel");
+  redirect("/leads/board");
 }

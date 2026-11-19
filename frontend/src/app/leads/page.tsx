@@ -5,21 +5,17 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Shell } from "@/components/Shell";
 import { Button, Card } from "@/components/ui";
 import { CreateLeadModal } from "@/components/leads/CreateLeadModal";
-import { FunnelView } from "@/components/leads/FunnelView";
 import { LeadFiltersBar } from "@/components/leads/LeadFiltersBar";
 import { LeadListView } from "@/components/leads/LeadListView";
-import { TransitionModal, stageKind } from "@/components/TransitionModal";
 import { useApp } from "@/context/AppContext";
-import { useToast } from "@/context/ToastContext";
 import { analyticsApi, api, leadApi, settingsApi, type LeadQuery } from "@/lib/api";
 import { fmtMoneyShort } from "@/lib/format";
 import type {
-  FunnelCard, FunnelStats, LeadFilters, LeadListResponse, LeadSource, LeadStage,
-  LeadStats, RejectReason, ServiceItem, UserWithStats,
+  FunnelStats, LeadFilters, LeadListResponse, LeadSource, LeadStage,
+  LeadStats, ServiceItem, UserWithStats,
 } from "@/lib/types";
 import { EMPTY_LEAD_FILTERS } from "@/lib/types";
 
-type ViewMode = "list" | "funnel";
 const LIMIT = 30;
 
 function KpiCard({ label, value, icon, color }: {
@@ -35,41 +31,6 @@ function KpiCard({ label, value, icon, color }: {
         <div style={{ fontSize: 22, fontWeight: 700, color: color ?? "var(--text1)" }}>{value}</div>
       </div>
     </Card>
-  );
-}
-
-/** Two views of the same data — the switch only changes presentation. */
-function ViewSwitch({ view, onChange, disabled }: {
-  view: ViewMode; onChange: (v: ViewMode) => void; disabled?: boolean;
-}) {
-  const options: { value: ViewMode; label: string; icon: string }[] = [
-    { value: "list", label: "Список", icon: "list" },
-    { value: "funnel", label: "Воронка", icon: "filter_alt" },
-  ];
-  return (
-    <div role="tablist" aria-label="Представление"
-      style={{ display: "inline-flex", background: "var(--bg3)", borderRadius: 8, padding: 3, gap: 2 }}>
-      {options.map((o) => {
-        const active = view === o.value;
-        return (
-          <button key={o.value} role="tab" aria-selected={active} disabled={disabled}
-            onClick={() => onChange(o.value)}
-            style={{
-              display: "flex", alignItems: "center", gap: 6, padding: "6px 14px",
-              borderRadius: 6, border: "none", cursor: disabled ? "not-allowed" : "pointer",
-              fontFamily: "inherit", fontSize: 13, fontWeight: active ? 600 : 400,
-              background: active ? "var(--bg2)" : "transparent",
-              color: active ? "var(--text)" : "var(--text3)",
-              boxShadow: active ? "var(--shadow-sm, 0 1px 3px rgba(0,0,0,0.08))" : "none",
-              opacity: disabled ? 0.6 : 1,
-              transition: "all 0.15s",
-            }}>
-            <span className="material-symbols-outlined" style={{ fontSize: 16 }}>{o.icon}</span>
-            {o.label}
-          </button>
-        );
-      })}
-    </div>
   );
 }
 
@@ -89,14 +50,14 @@ function filtersFromParams(params: URLSearchParams): LeadFilters {
 
 function LeadsPageInner() {
   const { user, isAdmin } = useApp();
-  const toast = useToast();
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const [view, setView] = useState<ViewMode>(
-    searchParams.get("view") === "funnel" ? "funnel" : "list",
-  );
-  // Filters live here, above both views, so switching never loses them.
+  // The funnel kanban moved to the stage board; keep old links working.
+  useEffect(() => {
+    if (searchParams.get("view") === "funnel") router.replace("/leads/board");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [filters, setFilters] = useState<LeadFilters>(() => filtersFromParams(new URLSearchParams(searchParams.toString())));
   const [debouncedSearch, setDebouncedSearch] = useState(filters.search);
 
@@ -105,23 +66,17 @@ function LeadsPageInner() {
   const [services, setServices] = useState<ServiceItem[]>([]);
   const [stages, setStages] = useState<LeadStage[]>([]);
   const [users, setUsers] = useState<UserWithStats[]>([]);
-  const [rejectReasons, setRejectReasons] = useState<RejectReason[]>([]);
 
   // List view
   const [listData, setListData] = useState<LeadListResponse>({ items: [], total: 0 });
   const [offset, setOffset] = useState(0);
 
-  // Funnel view
-  const [funnelLeads, setFunnelLeads] = useState<FunnelCard[]>([]);
-  const [funnelStages, setFunnelStages] = useState<LeadStage[]>([]);
   const [funnelStats, setFunnelStats] = useState<FunnelStats | null>(null);
-  const [selectedStageId, setSelectedStageId] = useState<number | null>(null);
 
   const [stats, setStats] = useState<LeadStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [createModal, setCreateModal] = useState(false);
-  const [pendingTransition, setPendingTransition] = useState<{ card: FunnelCard; stage: LeadStage } | null>(null);
 
   // Debounce typing so each keystroke does not hit the API.
   useEffect(() => {
@@ -129,10 +84,10 @@ function LeadsPageInner() {
     return () => clearTimeout(t);
   }, [filters.search]);
 
-  // Mirror view + filters into the URL so the state is shareable and restorable.
+  // Mirror filters into the URL so the state is shareable and restorable.
   useEffect(() => {
+    if (searchParams.get("view") === "funnel") return;
     const p = new URLSearchParams();
-    if (view !== "list") p.set("view", view);
     for (const [k, v] of Object.entries({ ...filters, search: debouncedSearch })) {
       if (v) p.set(k, String(v));
     }
@@ -140,7 +95,7 @@ function LeadsPageInner() {
     router.replace(qs ? `/leads?${qs}` : "/leads", { scroll: false });
     // `router` identity is stable in the app router; re-running on it would loop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, filters.date_from, filters.date_to, filters.stage_id, filters.source_id,
+  }, [filters.date_from, filters.date_to, filters.stage_id, filters.source_id,
       filters.service_id, filters.setter_id, filters.closer_id, debouncedSearch]);
 
   const query: LeadQuery = useMemo(() => ({
@@ -159,7 +114,6 @@ function LeadsPageInner() {
     settingsApi.listSources().then(setSources).catch(() => {});
     settingsApi.listServices().then(setServices).catch(() => {});
     settingsApi.listStages().then(setStages).catch(() => {});
-    settingsApi.listRejectReasons().then(setRejectReasons).catch(() => {});
     api.listUsers().then(setUsers).catch(() => {});
   }, []);
 
@@ -167,66 +121,25 @@ function LeadsPageInner() {
     setLoading(true);
     setError(null);
     try {
-      if (view === "list") {
-        const [data, s] = await Promise.all([
-          leadApi.list({ ...query, limit: LIMIT, offset: nextOffset }),
-          leadApi.stats({ date_from: filters.date_from || undefined, date_to: filters.date_to || undefined }),
-        ]);
-        setListData(data);
-        setStats(s);
-        setOffset(nextOffset);
-      } else {
-        const [funnel, fStats] = await Promise.all([
-          leadApi.funnel(query),
-          leadApi.funnelStats(query),
-        ]);
-        setFunnelLeads(funnel.leads);
-        setFunnelStages(funnel.stages);
-        setFunnelStats(fStats);
-        setSelectedStageId((prev) => {
-          if (prev !== null && funnel.stages.some((s) => s.id === prev)) return prev;
-          const busiest = funnel.stages
-            .map((s) => ({ s, count: funnel.leads.filter((c) => c.stage_id === s.id).length }))
-            .sort((a, b) => b.count - a.count)
-            .find((x) => x.count > 0);
-          return busiest?.s.id ?? funnel.stages[0]?.id ?? null;
-        });
-      }
+      const [data, s, fStats] = await Promise.all([
+        leadApi.list({ ...query, limit: LIMIT, offset: nextOffset }),
+        leadApi.stats({ date_from: filters.date_from || undefined, date_to: filters.date_to || undefined }),
+        leadApi.funnelStats(query),
+      ]);
+      setListData(data);
+      setStats(s);
+      setFunnelStats(fStats);
+      setOffset(nextOffset);
     } catch (e: unknown) {
       setError((e as Error).message || "Не удалось загрузить данные");
     } finally {
       setLoading(false);
     }
-  }, [view, query, filters.date_from, filters.date_to]);
+  }, [query, filters.date_from, filters.date_to]);
 
   useEffect(() => { load(0); }, [load]);
 
-  function handleActionSelect(card: FunnelCard, targetStage: LeadStage) {
-    if (stageKind(targetStage) === "generic") {
-      leadApi.changeStage(card.id, targetStage.id)
-        .then(() => { toast(`Этап изменён на «${targetStage.name}»`, "success"); load(offset); })
-        .catch((err: unknown) => toast((err as Error).message || "Ошибка смены этапа", "error"));
-    } else {
-      setPendingTransition({ card, stage: targetStage });
-    }
-  }
-
-  async function handleTransitionConfirm(comment: string, extra: Record<string, unknown>) {
-    if (!pendingTransition) return;
-    const { card, stage } = pendingTransition;
-    setPendingTransition(null);
-    try {
-      await leadApi.changeStage(card.id, stage.id, comment, extra);
-      toast(stage.is_won ? "Сделка полностью оплачена и закрыта" : `Этап → «${stage.name}»`, "success");
-    } catch (err: unknown) {
-      // A partial payment is recorded but rejects the stage change — the message
-      // explains why, and the data below still needs refreshing.
-      toast((err as Error).message || "Ошибка смены этапа", "error");
-    }
-    load(offset);
-  }
-
-  const kpis = view === "list" ? (
+  const kpis = (
     <>
       <KpiCard label="Лидов сегодня" value={stats?.leads_today ?? "—"} icon="today" />
       <KpiCard label="Лидов за период" value={stats?.leads_period ?? "—"} icon="contacts" />
@@ -237,7 +150,8 @@ function LeadsPageInner() {
       <KpiCard label="Оплачено" value={stats ? fmtMoneyShort(stats.paid_sum) : "—"} icon="paid" color="var(--green)" />
       <KpiCard label="Остаток" value={stats ? fmtMoneyShort(stats.remaining_sum) : "—"} icon="pending" color="var(--yellow)" />
     </>
-  ) : (
+  );
+  const funnelKpis = (
     <>
       <KpiCard label="Новых лидов" value={funnelStats?.new_leads ?? "—"} />
       <KpiCard label="На встрече" value={funnelStats?.meetings_stage ?? "—"} color="var(--primary)" />
@@ -255,12 +169,13 @@ function LeadsPageInner() {
       <div className="page-head" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
         <div>
           <div className="page-h1">Лиды и воронка</div>
-          <div className="page-desc">Один список лидов в двух представлениях · фильтры общие</div>
+          <div className="page-desc">Список всех лидов и показатели воронки · работа с этапами — на доске</div>
         </div>
-        <ViewSwitch view={view} onChange={setView} />
+        <Button variant="ghost" icon="view_kanban" onClick={() => router.push("/leads/board")}>Открыть доску</Button>
       </div>
 
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 20 }}>{kpis}</div>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>{kpis}</div>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 20 }}>{funnelKpis}</div>
 
       <LeadFiltersBar
         filters={filters}
@@ -283,28 +198,15 @@ function LeadsPageInner() {
         }
       />
 
-      {view === "list" ? (
-        <LeadListView
-          data={listData}
-          loading={loading}
-          error={error}
-          offset={offset}
-          limit={LIMIT}
-          onPage={(next) => load(next)}
-          onRetry={() => load(offset)}
-        />
-      ) : (
-        <FunnelView
-          stages={funnelStages}
-          leads={funnelLeads}
-          loading={loading}
-          error={error}
-          selectedStageId={selectedStageId}
-          onSelectStage={setSelectedStageId}
-          onAction={handleActionSelect}
-          onRetry={() => load(0)}
-        />
-      )}
+      <LeadListView
+        data={listData}
+        loading={loading}
+        error={error}
+        offset={offset}
+        limit={LIMIT}
+        onPage={(next) => load(next)}
+        onRetry={() => load(offset)}
+      />
 
       <CreateLeadModal
         open={createModal}
@@ -318,16 +220,6 @@ function LeadsPageInner() {
         isAdmin={isAdmin}
       />
 
-      {pendingTransition && (
-        <TransitionModal
-          stage={pendingTransition.stage}
-          card={pendingTransition.card}
-          users={users}
-          rejectReasons={rejectReasons}
-          onConfirm={handleTransitionConfirm}
-          onCancel={() => setPendingTransition(null)}
-        />
-      )}
     </Shell>
   );
 }

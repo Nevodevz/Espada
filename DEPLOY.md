@@ -82,6 +82,32 @@ docker compose --env-file .env exec -T db \
 Не используйте `docker compose down -v` в production: ключ `-v` удаляет базу и
 загруженные медиа.
 
+## Выкладка части 2 (доска по этапам, миграции 022–024)
+
+Миграция `024` удаляет свободные столбцы прежней доски. **До** `up -d --build`:
+
+1. Сохранить обе таблицы:
+
+   ```bash
+   docker compose --env-file .env exec -T db      sh -c 'pg_dump -U "$POSTGRES_USER" -t lead_board_columns -t lead_board_placements "$POSTGRES_DB"'      > lead_board_backup_$(date +%F).sql
+   ```
+
+2. Выгрузить раскладку для руководителя продаж:
+
+   ```bash
+   docker compose --env-file .env exec -T db sh -c 'psql -U "$POSTGRES_USER" "$POSTGRES_DB" -c "
+     SELECT c.name, count(p.lead_id) FROM lead_board_columns c
+     LEFT JOIN lead_board_placements p ON p.column_id = c.id
+     GROUP BY c.name, c.position ORDER BY c.position;"'
+   ```
+
+3. После выкладки нужные столбцы завести этапами в «Справочники → Этапы
+   воронки» и при необходимости перевести лидов на доске.
+
+Этапы, история, встречи и финансы лидов миграции не меняют. `022` включает
+признак «Клоузер» клоузерам, финдиректору и Адахану; `023` проставляет тип
+этапов по их названиям — после выкладки проверьте типы в справочнике.
+
 ## Переход существующей установки на Espada
 
 1. Сохраните действующий `.env` и резервную копию БД. Не заменяйте `.env`
