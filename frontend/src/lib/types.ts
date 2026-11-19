@@ -688,27 +688,23 @@ export interface FunnelCard extends Lead {
   days_in_stage: number;
 }
 
-export interface LeadBoardColumn {
+/** The lead's open (scheduled) meeting, shown on its board card. */
+export interface ScheduledMeeting {
   id: number;
-  name: string;
-  color: string;
-  position: number;
+  meeting_date: string;
+  duration_minutes: number;
+  closer_id: number | null;
+  address: string;
 }
 
 export interface LeadBoardCard extends Lead {
-  board_column_id: number | null;
-  board_position: number;
+  scheduled_meeting: ScheduledMeeting | null;
 }
 
+/** Board columns are funnel stages; won/lost stages are drop zones. */
 export interface LeadBoardData {
-  columns: LeadBoardColumn[];
+  stages: LeadStage[];
   leads: LeadBoardCard[];
-}
-
-export interface LeadBoardMove {
-  column_id: number | null;
-  before_lead_id: number | null;
-  expected_column_id: number | null;
 }
 
 export interface FunnelStats {

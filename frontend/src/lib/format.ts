@@ -35,6 +35,14 @@ export function utcToLocalInput(iso: string): string {
   return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}T${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
 }
 
+/** UTC instant → Bishkek wall-clock `{date: "YYYY-MM-DD", time: "HH:mm"}`. Naive input is UTC. */
+export function bishkekDateTimeParts(iso: string): { date: string; time: string } {
+  const hasZone = /(Z|[+-]\d{2}:?\d{2})$/.test(iso);
+  const local = utcToLocalInput(hasZone ? iso : `${iso}Z`);
+  const [date = "", time = ""] = local.split("T");
+  return { date, time };
+}
+
 /** `YYYY-MM-DDTHH:mm` entered in Bishkek time → UTC ISO for the API. */
 export function localInputToUtc(value: string): string {
   const [d, t = "00:00"] = value.split("T");

@@ -5,6 +5,7 @@ import type {
   LeadFilters, LeadSource, LeadStage, ServiceItem, UserWithStats,
 } from "@/lib/types";
 import { EMPTY_LEAD_FILTERS } from "@/lib/types";
+import { closerOptions } from "@/lib/roles";
 
 /**
  * Filters shared by both views of «Лиды и воронка».
@@ -93,7 +94,7 @@ export function LeadFiltersBar({
           <Select value={filters.closer_id} disabled={disabled}
             onChange={(e) => set("closer_id", e.target.value)}>
             <option value="">Все клоузеры</option>
-            {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+            {closerOptions(users, filters.closer_id ? Number(filters.closer_id) : null).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
           </Select>
         </div>
 

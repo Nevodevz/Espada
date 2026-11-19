@@ -1,26 +1,41 @@
-import type { LeadBoardCard, LeadBoardMove } from "@/lib/types";
+import type { LeadBoardCard, LeadStage } from "@/lib/types";
 
-export function cardsInColumn(cards: LeadBoardCard[], columnId: number | null): LeadBoardCard[] {
-  return cards.filter((card) => card.board_column_id === columnId);
+const CLOSED = new Set(["won", "lost"]);
+const byPosition = (a: LeadStage, b: LeadStage) => a.position - b.position || a.id - b.id;
+
+/** Board columns are open stages; won/lost become drop zones under the board. */
+export function splitStages(stages: LeadStage[]): { columns: LeadStage[]; dropZones: LeadStage[] } {
+  const sorted = [...stages].sort(byPosition);
+  return {
+    columns: sorted.filter((s) => !CLOSED.has(s.kind)),
+    dropZones: sorted.filter((s) => CLOSED.has(s.kind)),
+  };
 }
 
-/** Insert relative to a visible card, so filtering never invents a global index. */
-export function cardMoveTarget(
-  cards: LeadBoardCard[], leadId: number, columnId: number | null, overLeadId?: number,
-): LeadBoardMove | null {
-  const active = cards.find((card) => card.id === leadId);
-  if (!active || overLeadId === leadId) return null;
-  const target = cardsInColumn(cards, columnId);
-  let beforeLeadId: number | null = null;
-  if (overLeadId !== undefined) {
-    const overIndex = target.findIndex((card) => card.id === overLeadId);
-    if (overIndex < 0) return null;
-    const activeIndex = target.findIndex((card) => card.id === leadId);
-    beforeLeadId = activeIndex >= 0 && activeIndex < overIndex
-      ? target[overIndex + 1]?.id ?? null
-      : overLeadId;
-  } else if (active.board_column_id === columnId && target.at(-1)?.id === leadId) {
-    return null;
-  }
-  return { column_id: columnId, before_lead_id: beforeLeadId, expected_column_id: active.board_column_id };
+/** Cards of one stage, in the order the server sorted them. */
+export function cardsForStage(cards: LeadBoardCard[], stageId: number): LeadBoardCard[] {
+  return cards.filter((card) => card.stage_id === stageId);
+}
+
+/** Generic stages move at once; every other kind needs the transition form. */
+export function dropAction(fromStageId: number | null, to: LeadStage): "none" | "move" | "transition" {
+  if (fromStageId === to.id) return "none";
+  return to.kind === "generic" ? "move" : "transition";
+}
+
+export function applyOptimisticMove(cards: LeadBoardCard[], leadId: number, toStageId: number): LeadBoardCard[] {
+  return cards.map((card) => (card.id === leadId ? { ...card, stage_id: toStageId } : card));
+}
+
+/** Background refresh must never redraw the board under an open dialog or a running change. */
+export function shouldPoll(state: { visible: boolean; modalOpen: boolean; mutating: boolean }): boolean {
+  return state.visible && !state.modalOpen && !state.mutating;
+}
+
+/**
+ * After a failed stage change: a payment attempt may already be recorded (partial
+ * payment), so its form closes to avoid submitting it twice; other forms stay open.
+ */
+export function keepFormOnError(kind: LeadStage["kind"]): boolean {
+  return kind !== "won";
 }

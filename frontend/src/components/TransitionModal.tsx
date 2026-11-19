@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { Modal } from "@/components/Modal";
 import { Button, FormField, Input, Select } from "@/components/ui";
-import type { LeadStage, User, RejectReason, StageKind } from "@/lib/types";
+import type { LeadStage, User, RejectReason, StageKind, ScheduledMeeting } from "@/lib/types";
+import { bishkekDateTimeParts } from "@/lib/format";
 import { closerOptions } from "@/lib/roles";
 
 /** Stage behaviour comes from the stored `kind` (backend `LeadStage.kind`). */
@@ -38,6 +39,8 @@ export interface CardLike {
   closer?: { id: number; name: string } | null;
   setter_id?: number | null;
   setter?: { id: number; name: string } | null;
+  /** Open meeting: re-entering «Встреча» reschedules it instead of creating a new one. */
+  scheduled_meeting?: ScheduledMeeting | null;
 }
 
 interface TransitionModalProps {
@@ -45,8 +48,11 @@ interface TransitionModalProps {
   card: CardLike;
   users: User[];
   rejectReasons: RejectReason[];
-  onConfirm: (comment: string, extra: Record<string, unknown>) => void;
+  onConfirm: (comment: string, extra: Record<string, unknown>) => void | Promise<unknown>;
   onCancel: () => void;
+  /** Server error for the last attempt; the form stays open so the user can fix it. */
+  error?: string | null;
+  busy?: boolean;
 }
 
 function initForm(kind: string, card: CardLike): Record<string, unknown> {
@@ -74,8 +80,17 @@ function initForm(kind: string, card: CardLike): Record<string, unknown> {
       };
     case "waiting_payment":
       return { amount: dealAmount, expected_payment_date: "", responsible_id: 0 };
-    case "meeting":
+    case "meeting": {
+      const open = card.scheduled_meeting;
+      if (open) {
+        const { date, time } = bishkekDateTimeParts(open.meeting_date);
+        return {
+          meeting_date: date, meeting_time: time, address: open.address ?? "", comment: "",
+          closer_id: open.closer_id ?? closerId, duration_minutes: open.duration_minutes,
+        };
+      }
       return { meeting_date: "", meeting_time: "12:00", address: "", comment: "", closer_id: closerId };
+    }
     case "lost":
       return { reject_reason_id: 0, reject_comment: "", closer_id: closerId };
     default:
@@ -90,6 +105,8 @@ export function TransitionModal({
   rejectReasons,
   onConfirm,
   onCancel,
+  error,
+  busy = false,
 }: TransitionModalProps) {
   const kind = stageKind(stage);
   const closers = closerOptions(users, card.closer_id ?? card.closer?.id ?? null);
@@ -143,6 +160,11 @@ export function TransitionModal({
 
         {kind === "meeting" && (
           <>
+            {card.scheduled_meeting && (
+              <div role="note" style={{ fontSize: 12, color: "var(--text2)", marginBottom: 14 }}>
+                Встреча уже назначена на {(() => { const p = bishkekDateTimeParts(card.scheduled_meeting.meeting_date); return `${p.date.slice(8, 10)}.${p.date.slice(5, 7)} ${p.time}`; })()} — она будет перенесена.
+              </div>
+            )}
             <FormField label="Дата встречи" required>
               <Input
                 type="date"
@@ -416,11 +438,14 @@ export function TransitionModal({
           />
         </FormField>
 
+        {error && (
+          <div role="alert" style={{ color: "var(--red)", fontSize: 13, margin: "4px 0 12px" }}>{error}</div>
+        )}
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 4 }}>
-          <Button type="button" variant="ghost" onClick={onCancel}>
+          <Button type="button" variant="ghost" onClick={onCancel} disabled={busy}>
             Отмена
           </Button>
-          <Button type="submit" variant="primary">
+          <Button type="submit" variant="primary" loading={busy} disabled={busy}>
             {confirmLabel}
           </Button>
         </div>

@@ -1,33 +1,57 @@
 import { describe, expect, it } from "vitest";
-import { cardMoveTarget, cardsInColumn } from "./lead-board-layout";
-import type { LeadBoardCard } from "@/lib/types";
+import { applyOptimisticMove, cardsForStage, dropAction, keepFormOnError, shouldPoll, splitStages } from "./lead-board-layout";
+import type { LeadBoardCard, LeadStage, StageKind } from "@/lib/types";
 
-const cards = [
-  { id: 1, board_column_id: null, stage_id: 7 },
-  { id: 2, board_column_id: 10, stage_id: 7 },
-  { id: 3, board_column_id: 10, stage_id: 8 },
-  { id: 4, board_column_id: 10, stage_id: 9 },
-] as LeadBoardCard[];
+const stage = (id: number, position: number, kind: StageKind = "generic") =>
+  ({ id, name: `S${id}`, position, kind, color: "#000", is_won: kind === "won", is_lost: kind === "lost", norm_days: null, is_archived: false }) as LeadStage;
+const card = (id: number, stage_id: number | null) => ({ id, stage_id }) as LeadBoardCard;
 
-describe("independent lead board placement", () => {
-  it("groups by working column rather than funnel stage", () => {
-    expect(cardsInColumn(cards, 10).map((card) => card.id)).toEqual([2, 3, 4]);
-    expect(cardsInColumn(cards, null).map((card) => card.id)).toEqual([1]);
+describe("splitStages", () => {
+  it("puts won/lost into drop zones and sorts both by position", () => {
+    const { columns, dropZones } = splitStages([stage(3, 2, "meeting"), stage(9, 9, "lost"), stage(1, 0), stage(8, 8, "won")]);
+    expect(columns.map((s) => s.id)).toEqual([1, 3]);
+    expect(dropZones.map((s) => s.id)).toEqual([8, 9]);
   });
-  it("can drop into an empty column with a source-column guard", () => {
-    expect(cardMoveTarget(cards, 1, 20)).toEqual({ column_id: 20, before_lead_id: null, expected_column_id: null });
+});
+
+describe("dropAction", () => {
+  it("does nothing on the same stage", () => expect(dropAction(1, stage(1, 0))).toBe("none"));
+  it("moves straight onto a generic stage", () => expect(dropAction(1, stage(2, 1))).toBe("move"));
+  it("asks for details on any other stage", () => {
+    expect(dropAction(1, stage(3, 2, "meeting"))).toBe("transition");
+    expect(dropAction(null, stage(9, 9, "lost"))).toBe("transition");
   });
-  it("inserts before a visible anchor when a filter hides other cards", () => {
-    expect(cardMoveTarget(cards.filter((card) => card.id !== 3), 1, 10, 4)).toEqual({ column_id: 10, before_lead_id: 4, expected_column_id: null });
+});
+
+describe("cardsForStage", () => {
+  it("keeps server order", () => {
+    const cards = [card(5, 1), card(2, 2), card(7, 1)];
+    expect(cardsForStage(cards, 1).map((c) => c.id)).toEqual([5, 7]);
   });
-  it("can reorder downwards within the same column", () => {
-    expect(cardMoveTarget(cards, 2, 10, 3)?.before_lead_id).toBe(4);
-    expect(cardMoveTarget(cards, 2, 10, 4)?.before_lead_id).toBeNull();
+});
+
+describe("applyOptimisticMove", () => {
+  it("changes only the moved card and does not mutate the input", () => {
+    const cards = [card(1, 1), card(2, 1)];
+    const next = applyOptimisticMove(cards, 2, 4);
+    expect(next.map((c) => c.stage_id)).toEqual([1, 4]);
+    expect(cards[1].stage_id).toBe(1);
   });
-  it("ignores cancelled, self and stale targets", () => {
-    expect(cardMoveTarget(cards, 99, 10)).toBeNull();
-    expect(cardMoveTarget(cards, 2, 10, 2)).toBeNull();
-    expect(cardMoveTarget(cards, 1, 10, 99)).toBeNull();
-    expect(cardMoveTarget(cards, 4, 10)).toBeNull();
+});
+
+describe("shouldPoll", () => {
+  it("polls only when visible, idle and without an open dialog", () => {
+    expect(shouldPoll({ visible: true, modalOpen: false, mutating: false })).toBe(true);
+    expect(shouldPoll({ visible: false, modalOpen: false, mutating: false })).toBe(false);
+    expect(shouldPoll({ visible: true, modalOpen: true, mutating: false })).toBe(false);
+    expect(shouldPoll({ visible: true, modalOpen: false, mutating: true })).toBe(false);
+  });
+});
+
+describe("keepFormOnError", () => {
+  it("closes the payment form (payment already recorded) and keeps the others open", () => {
+    expect(keepFormOnError("won")).toBe(false);
+    expect(keepFormOnError("meeting")).toBe(true);
+    expect(keepFormOnError("lost")).toBe(true);
   });
 });

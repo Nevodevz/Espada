@@ -310,6 +310,11 @@ export interface LeadQuery {
   limit?: number; offset?: number;
 }
 
+/** Board filters: the list filters plus the board's quick toggles. */
+export interface BoardQuery extends LeadQuery {
+  mine?: boolean; unassigned?: boolean; show_closed?: boolean;
+}
+
 function leadQueryString(f?: LeadQuery): string {
   const p = new URLSearchParams();
   for (const key of [
@@ -326,16 +331,13 @@ function leadQueryString(f?: LeadQuery): string {
 }
 
 export const leadBoardApi = {
-  get: (query?: LeadQuery) => request<import("./types").LeadBoardData>(`/lead-board${leadQueryString(query)}`),
-  createColumn: (data: { name: string; color: string }) =>
-    request<import("./types").LeadBoardColumn>("/lead-board/columns", { method: "POST", body: JSON.stringify(data) }),
-  updateColumn: (id: number, data: { name: string; color: string }) =>
-    request<import("./types").LeadBoardColumn>(`/lead-board/columns/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
-  moveColumn: (id: number, before_column_id: number | null) =>
-    request<import("./types").LeadBoardColumn[]>(`/lead-board/columns/${id}/move`, { method: "POST", body: JSON.stringify({ before_column_id }) }),
-  deleteColumn: (id: number) => request<void>(`/lead-board/columns/${id}`, { method: "DELETE" }),
-  moveCard: (id: number, data: import("./types").LeadBoardMove) =>
-    request<import("./types").LeadBoardCard>(`/lead-board/leads/${id}/move`, { method: "PATCH", body: JSON.stringify(data) }),
+  get: (query?: BoardQuery) => {
+    const qs = leadQueryString(query);
+    const extra = new URLSearchParams();
+    for (const key of ["mine", "unassigned", "show_closed"] as const) if (query?.[key]) extra.set(key, "true");
+    const sep = qs ? "&" : "?";
+    return request<import("./types").LeadBoardData>(`/lead-board${qs}${extra.size ? sep + extra : ""}`);
+  },
 };
 
 export const leadApi = {
