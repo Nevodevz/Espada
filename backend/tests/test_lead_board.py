@@ -1,118 +1,88 @@
-import pytest
+"""Sales board: columns are funnel stages, cards are open leads."""
+from datetime import datetime, timedelta, timezone
 
-from app.models import Lead, LeadActivity, LeadBoardColumn, LeadBoardPlacement, LeadStageHistory, LeadStatus, Meeting
-from conftest import auth_headers
-
-
-def column(client, admin, name="На проверке"):
-    response = client.post("/api/lead-board/columns", json={"name": name, "color": "#16a34a"}, headers=auth_headers(admin))
-    assert response.status_code == 201, response.text
-    return response.json()
+from app.models import Lead, LeadStage, LeadStatus
+from app.services.leads import change_lead_stage
+from tests.conftest import auth_headers
 
 
-def move(client, user, lead_id, target, **extra):
-    return client.patch(f"/api/lead-board/leads/{lead_id}/move", json={"column_id": target, **extra}, headers=auth_headers(user))
+def board(client, user, **params):
+    r = client.get("/api/lead-board", params=params, headers=auth_headers(user))
+    assert r.status_code == 200, r.text
+    return r.json()
 
 
-def test_existing_leads_start_unassigned_and_archived_are_excluded(client, db, admin, lead):
-    archived = Lead(client_name="Архив", status=LeadStatus.archived)
-    db.add(archived)
+def add_lead(db, stage, name="Ещё", setter=None, closer=None, status=LeadStatus.active, updated_at=None):
+    lead = Lead(
+        client_name=name, phone=f"+996 700 {abs(hash(name)) % 1000000:06d}",
+        stage_id=stage.id, setter_id=setter.id if setter else None,
+        closer_id=closer.id if closer else None, status=status,
+    )
+    if updated_at:
+        lead.updated_at = updated_at
+    db.add(lead)
     db.commit()
-    response = client.get("/api/lead-board", headers=auth_headers(admin))
-    assert response.status_code == 200
-    assert response.json()["columns"] == []
-    assert [card["id"] for card in response.json()["leads"]] == [lead.id]
-    assert response.json()["leads"][0]["board_column_id"] is None
+    return lead
 
 
-def test_board_move_never_changes_funnel_finance_or_activity(client, db, admin, staff, lead, deal):
-    target = column(client, admin)
-    before = (lead.stage_id, lead.status, lead.updated_at, deal.amount, deal.paid_amount)
-    response = move(client, staff, lead.id, target["id"], expected_column_id=None)
-    assert response.status_code == 200, response.text
-    assert response.json()["board_column_id"] == target["id"]
-    assert response.json()["stage_id"] == before[0]
-    assert response.json()["deal_amount"] == before[3]
-    db.refresh(lead)
-    db.refresh(deal)
-    assert (lead.stage_id, lead.status, lead.updated_at, deal.amount, deal.paid_amount) == before
-    assert db.query(LeadStageHistory).count() == 0
-    assert db.query(LeadActivity).count() == 0
-    assert db.query(Meeting).count() == 0
-    assert db.get(LeadBoardPlacement, lead.id).updated_by == staff.id
+def ids(data):
+    return [c["id"] for c in data["leads"]]
 
 
-def test_order_persists_and_can_return_to_unassigned(client, db, admin, lead):
-    target = column(client, admin)
-    another = Lead(client_name="Второй", status=LeadStatus.active, stage_id=lead.stage_id)
-    db.add(another)
+def test_board_returns_active_stages_with_kind(client, db, admin, stages):
+    db.add(LeadStage(name="Демо-тест", position=99, is_archived=True))
     db.commit()
-    assert move(client, admin, lead.id, target["id"]).status_code == 200
-    assert move(client, admin, another.id, target["id"], before_lead_id=lead.id).status_code == 200
-    board = client.get("/api/lead-board", headers=auth_headers(admin)).json()
-    assert [card["id"] for card in board["leads"]] == [another.id, lead.id]
-    assert move(client, admin, lead.id, None, expected_column_id=target["id"]).status_code == 200
-    assert db.get(LeadBoardPlacement, lead.id).column_id is None
+    data = board(client, admin)
+    assert [s["name"] for s in data["stages"]] == [
+        "Новый лид", "Созвон", "Встреча", "Договор", "Ожидание оплаты", "Оплачено", "Минус",
+    ]
+    assert {s["name"]: s["kind"] for s in data["stages"]}["Встреча"] == "meeting"
 
 
-def test_stale_move_is_rejected_without_overwriting_another_user(client, db, admin, staff, lead):
-    first = column(client, admin)
-    second = column(client, admin, "Готово к обсуждению")
-    assert move(client, admin, lead.id, first["id"], expected_column_id=None).status_code == 200
-    response = move(client, staff, lead.id, second["id"], expected_column_id=None)
-    assert response.status_code == 409
-    assert db.get(LeadBoardPlacement, lead.id).column_id == first["id"]
+def test_closed_leads_hidden_unless_requested(client, db, admin, stages, lead):
+    won = add_lead(db, stages["Оплачено"], "Оплатил")
+    lost = add_lead(db, stages["Минус"], "Отказ")
+    assert set(ids(board(client, admin))) == {lead.id}
+    assert set(ids(board(client, admin, show_closed=True))) == {lead.id, won.id, lost.id}
 
 
-@pytest.mark.parametrize("method,path,body", [
-    ("post", "/api/lead-board/columns", {"name": "Столбец"}),
-    ("patch", "/api/lead-board/columns/999", {"name": "Изменено"}),
-    ("post", "/api/lead-board/columns/999/move", {}),
-    ("delete", "/api/lead-board/columns/999", None),
-])
-def test_column_management_requires_admin(client, staff, method, path, body):
-    kwargs = {"headers": auth_headers(staff)}
-    if body is not None:
-        kwargs["json"] = body
-    assert getattr(client, method)(path, **kwargs).status_code == 403
+def test_archived_leads_never_shown(client, db, admin, stages):
+    gone = add_lead(db, stages["Созвон"], "Архив", status=LeadStatus.archived)
+    assert gone.id not in ids(board(client, admin, show_closed=True))
 
 
-def test_column_edit_reorder_and_delete_keep_leads(client, db, admin, lead):
-    first = column(client, admin)
-    second = column(client, admin, "Обсудить")
-    assert client.patch(f"/api/lead-board/columns/{first['id']}", json={"name": "  Согласование  "}, headers=auth_headers(admin)).json()["name"] == "Согласование"
-    response = client.post(f"/api/lead-board/columns/{second['id']}/move", json={"before_column_id": first["id"]}, headers=auth_headers(admin))
-    assert [item["id"] for item in response.json()] == [second["id"], first["id"]]
-    assert move(client, admin, lead.id, first["id"]).status_code == 200
-    assert client.delete(f"/api/lead-board/columns/{first['id']}", headers=auth_headers(admin)).status_code == 204
-    assert db.get(Lead, lead.id) is not None
-    assert db.get(LeadBoardPlacement, lead.id).column_id is None
+def test_mine_filter(client, db, admin, staff, stages, lead):
+    other = add_lead(db, stages["Созвон"], "Чужой")
+    mine = ids(board(client, staff, mine=True))
+    assert lead.id in mine and other.id not in mine
 
 
-@pytest.mark.parametrize("body", [{"name": "   "}, {"name": "Столбец", "color": "red"}, {"name": "x" * 121}])
-def test_invalid_column_metadata_is_rejected(client, admin, body):
-    assert client.post("/api/lead-board/columns", json=body, headers=auth_headers(admin)).status_code == 422
+def test_unassigned_filter(client, db, admin, staff, stages, lead):
+    free = add_lead(db, stages["Новый лид"], "Ничей")
+    assert ids(board(client, admin, unassigned=True)) == [free.id]
 
 
-def test_invalid_destinations_and_archived_leads_do_not_move(client, db, admin, lead):
-    target = column(client, admin)
-    assert move(client, admin, lead.id, 999).status_code == 404
-    assert move(client, admin, lead.id, target["id"], before_lead_id=999).status_code == 422
-    assert move(client, admin, lead.id, target["id"], before_lead_id=lead.id).status_code == 422
-    assert db.get(LeadBoardPlacement, lead.id) is None
-    lead.status = LeadStatus.archived
+def test_cards_sorted_by_last_activity(client, db, admin, stages):
+    now = datetime.now(timezone.utc)
+    old = add_lead(db, stages["Созвон"], "Старый", updated_at=now - timedelta(days=3))
+    new = add_lead(db, stages["Созвон"], "Новый", updated_at=now)
+    order = ids(board(client, admin))
+    assert order.index(new.id) < order.index(old.id)
+
+
+def test_card_carries_scheduled_meeting(client, db, admin, stages, lead):
+    card = next(c for c in board(client, admin)["leads"] if c["id"] == lead.id)
+    assert card["scheduled_meeting"] is None
+    change_lead_stage(db, lead, stages["Встреча"].id, extra_data={"meeting_date": "2026-12-01", "meeting_time": "12:00"})
     db.commit()
-    assert move(client, admin, lead.id, target["id"]).status_code == 422
+    card = next(c for c in board(client, admin)["leads"] if c["id"] == lead.id)
+    assert card["scheduled_meeting"]["meeting_date"].startswith("2026-12-01T06:00")
+    assert card["scheduled_meeting"]["closer_id"] == lead.closer_id
 
 
-def test_board_filters_preserve_independent_placement(client, db, admin, lead):
-    target = column(client, admin)
-    move(client, admin, lead.id, target["id"])
-    response = client.get(f"/api/lead-board?search={lead.client_name}&stage_id={lead.stage_id}", headers=auth_headers(admin))
-    assert response.status_code == 200
-    assert [card["id"] for card in response.json()["leads"]] == [lead.id]
-    assert response.json()["leads"][0]["board_column_id"] == target["id"]
-    assert client.get("/api/lead-board?search=not-found", headers=auth_headers(admin)).json()["leads"] == []
+def test_free_column_endpoints_are_gone(client, admin):
+    r = client.post("/api/lead-board/columns", json={"name": "x"}, headers=auth_headers(admin))
+    assert r.status_code in (404, 405)
 
 
 def test_unauthenticated_requests_are_rejected(client):
