@@ -20,7 +20,7 @@
 | Абылай | abylay@espada.kg | admin, основатель, Продажи |
 | Назар | nazar@espada.kg | admin, основатель, Маркетинг |
 | Тимур | timur@espada.kg | admin, основатель, Тех лид (бэкенд) |
-| Адахан | adahan@espada.kg | admin, основатель, Финансы |
+| Адахан | adahan@espada.kg | admin, основатель, Финансы, клоузер (`is_closer`) |
 | Азамат/Ариет/Абдулла/Туратбек/Эмирлан | *@espada.kg | staff, Промптеры |
 | Талгат/Бектур/Мирослав | *@espada.kg | staff, Бэкенд |
 | Рахима/Минай | *@espada.kg | staff, Продажи |
