@@ -45,6 +45,8 @@ class User(Base):
     role: Mapped[Role] = mapped_column(Enum(Role), default=Role.staff, nullable=False)
     position: Mapped[str] = mapped_column(String(80), default="Сотрудник")
     is_founder: Mapped[bool] = mapped_column(Boolean, default=False)  # доступ к скрытой части
+    # Проводит встречи отдела продаж. Явный признак вместо сравнения строки должности.
+    is_closer: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
     avatar_color: Mapped[str] = mapped_column(String(20), default="indigo")
     # Relative media path served by backend/nginx, e.g. "/media/avatars/7_a1b2.webp".
     # Empty string = fall back to initials + avatar_color.

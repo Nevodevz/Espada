@@ -99,8 +99,8 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), _: User = De
         name=payload.name, email=payload.email,
         password_hash=hash_password(payload.password),
         role=payload.role, position=payload.position,
-        is_founder=payload.is_founder, avatar_color=payload.avatar_color,
-        is_active=True,
+        is_founder=payload.is_founder, is_closer=payload.is_closer,
+        avatar_color=payload.avatar_color, is_active=True,
     )
     if payload.department_ids:
         user.departments = db.query(Department).filter(Department.id.in_(payload.department_ids)).all()
@@ -125,7 +125,7 @@ def update_user(
         if current.id != user_id:
             raise HTTPException(403, "Можно редактировать только свой профиль")
         payload_data = payload.model_dump(exclude_unset=True)
-        for protected in ("role", "is_founder", "department_ids", "is_active"):
+        for protected in ("role", "is_founder", "is_closer", "department_ids", "is_active"):
             payload_data.pop(protected, None)
         payload = UserUpdate(**payload_data)
 

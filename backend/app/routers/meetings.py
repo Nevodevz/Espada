@@ -63,8 +63,6 @@ class MeetingOut(BaseModel):
 MeetingOut.model_rebuild()
 
 # ---------- Helpers ----------
-# Финансовый директор (Адахан) also participates in sales as a closer
-_CLOSER_POSITIONS = {"Клоузер", "Финансовый директор"}
 _SETTER_POSITIONS = {"Сеттер", "Руководитель продаж"}
 
 def _can_create(user: User) -> bool:

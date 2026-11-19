@@ -26,6 +26,7 @@ class UserCreate(UserBase):
     password: str
     role: Role = Role.staff
     is_founder: bool = False
+    is_closer: bool = False
     is_active: bool = True
     department_ids: list[int] = []
 
@@ -35,6 +36,7 @@ class UserUpdate(BaseModel):
     position: Optional[str] = None
     role: Optional[Role] = None
     is_founder: Optional[bool] = None
+    is_closer: Optional[bool] = None
     avatar_color: Optional[str] = None
     is_active: Optional[bool] = None
     last_seen: Optional[datetime] = None
@@ -47,6 +49,7 @@ class UserOut(UserBase):
     id: int
     role: Role
     is_founder: bool
+    is_closer: bool = False
     is_active: bool
     last_seen: Optional[datetime] = None
     created_at: datetime
