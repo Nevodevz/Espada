@@ -9,7 +9,7 @@ import {
 } from "@dnd-kit/core";
 import { Button } from "@/components/ui";
 import { StageActionMenu } from "./StageActionMenu";
-import { cardsForStage, splitStages } from "./lead-board-layout";
+import { cardsForStage, cardsWithoutColumn, splitStages } from "./lead-board-layout";
 import { fmtMoneyShort } from "@/lib/format";
 import type { LeadBoardCard, LeadBoardData, LeadStage } from "@/lib/types";
 
@@ -73,6 +73,22 @@ function StageColumn({ stage, cards, stages, disabled, onDropCard }: {
   </section>;
 }
 
+/** Leads with no stage or an archived one: visible and movable via the menu, not a drop target. */
+function NoStageColumn({ cards, stages, disabled, onDropCard }: {
+  cards: LeadBoardCard[]; stages: LeadStage[]; disabled: boolean; onDropCard: Props["onDropCard"];
+}) {
+  return <section className="lead-board-column" aria-label="Без этапа">
+    <header className="lead-board-column-head">
+      <span className="lead-board-dot" style={{ background: "#767586" }} />
+      <h2>Без этапа / архивный этап</h2>
+      <span className="lead-board-count">{cards.length}</span>
+    </header>
+    <div className="lead-board-lane">
+      {cards.map((card) => <LeadCard key={card.id} card={card} stages={stages} disabled={disabled} onDropCard={onDropCard} />)}
+    </div>
+  </section>;
+}
+
 function DropZone({ stage, count, disabled }: { stage: LeadStage; count: number; disabled: boolean }) {
   const { setNodeRef, isOver } = useDroppable({ id: `stage-${stage.id}`, disabled, data: { stageId: stage.id } });
   return <div ref={setNodeRef} className={`lead-board-zone${isOver ? " lead-board-zone-over" : ""}`}
@@ -88,6 +104,7 @@ export function LeadBoard({ data, disabled, onDropCard, showClosed = false }: Pr
   const allStages = [...split.columns, ...split.dropZones];
   const columns = showClosed ? allStages : split.columns;
   const dropZones = showClosed ? [] : split.dropZones;
+  const orphans = cardsWithoutColumn(data.leads, allStages);
   const collisionDetection: CollisionDetection = (args) =>
     args.pointerCoordinates ? pointerWithin(args) : closestCenter(args);
 
@@ -106,6 +123,7 @@ export function LeadBoard({ data, disabled, onDropCard, showClosed = false }: Pr
       onDragStart={(event) => setActiveCard(data.leads.find((c) => c.id === event.active.data.current?.leadId) ?? null)}>
       <div className="lead-board-scroll" aria-label="Канбан лидов" aria-busy={disabled}>
         <div className="lead-board-columns">
+          {orphans.length > 0 && <NoStageColumn cards={orphans} stages={allStages} disabled={disabled} onDropCard={onDropCard} />}
           {columns.map((stage) => <StageColumn key={stage.id} stage={stage} cards={cardsForStage(data.leads, stage.id)}
             stages={allStages} disabled={disabled} onDropCard={onDropCard} />)}
         </div>

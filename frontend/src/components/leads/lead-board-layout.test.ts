@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyOptimisticMove, cardsForStage, dropAction, keepFormOnError, shouldPoll, splitStages } from "./lead-board-layout";
+import { applyOptimisticMove, cardsForStage, cardsWithoutColumn, dropAction, keepFormOnError, shouldPoll, splitStages } from "./lead-board-layout";
 import type { LeadBoardCard, LeadStage, StageKind } from "@/lib/types";
 
 const stage = (id: number, position: number, kind: StageKind = "generic") =>
@@ -53,5 +53,13 @@ describe("keepFormOnError", () => {
     expect(keepFormOnError("won")).toBe(false);
     expect(keepFormOnError("meeting")).toBe(true);
     expect(keepFormOnError("lost")).toBe(true);
+  });
+});
+
+describe("cardsWithoutColumn", () => {
+  it("returns leads with no stage or with a stage that is not on the board", () => {
+    const stages = [stage(1, 0), stage(2, 1)];
+    const cards = [card(1, 1), card(2, null), card(3, 7), card(4, 2)];
+    expect(cardsWithoutColumn(cards, stages).map((c) => c.id)).toEqual([2, 3]);
   });
 });

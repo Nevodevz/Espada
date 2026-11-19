@@ -757,6 +757,8 @@ export interface LeadFile {
 }
 
 export interface LeadDetail extends Lead {
+  /** Open meeting — re-entering «Встреча» reschedules it. */
+  scheduled_meeting: ScheduledMeeting | null;
   stage_history: LeadStageHistory[];
   activities: LeadActivity[];
   meetings: {

@@ -330,14 +330,16 @@ function leadQueryString(f?: LeadQuery): string {
   return qs ? "?" + qs : "";
 }
 
+/** List filters + board toggles. Uses toString(), not `.size` (missing in Safari < 17). */
+export function boardQueryString(query?: BoardQuery): string {
+  const p = new URLSearchParams(leadQueryString(query).replace(/^\?/, ""));
+  for (const key of ["mine", "unassigned", "show_closed"] as const) if (query?.[key]) p.set(key, "true");
+  const qs = p.toString();
+  return qs ? "?" + qs : "";
+}
+
 export const leadBoardApi = {
-  get: (query?: BoardQuery) => {
-    const qs = leadQueryString(query);
-    const extra = new URLSearchParams();
-    for (const key of ["mine", "unassigned", "show_closed"] as const) if (query?.[key]) extra.set(key, "true");
-    const sep = qs ? "&" : "?";
-    return request<import("./types").LeadBoardData>(`/lead-board${qs}${extra.size ? sep + extra : ""}`);
-  },
+  get: (query?: BoardQuery) => request<import("./types").LeadBoardData>(`/lead-board${boardQueryString(query)}`),
 };
 
 export const leadApi = {

@@ -21,9 +21,14 @@ def upgrade() -> None:
         "users",
         sa.Column("is_closer", sa.Boolean(), nullable=False, server_default=sa.false()),
     )
+    backfill()
+
+
+def backfill() -> None:
+    # lower(): PostgreSQL LIKE is case-sensitive and emails may be stored capitalised.
     op.execute(
         "UPDATE users SET is_closer = true "
-        "WHERE position IN ('Клоузер', 'Финансовый директор') OR email LIKE 'adahan@%'"
+        "WHERE position IN ('Клоузер', 'Финансовый директор') OR lower(email) LIKE 'adahan@%'"
     )
 
 

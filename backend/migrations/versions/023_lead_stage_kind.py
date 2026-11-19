@@ -29,8 +29,15 @@ def upgrade() -> None:
         "lead_stages",
         sa.Column("kind", sa.String(20), nullable=False, server_default="generic"),
     )
+    backfill()
+
+
+def backfill() -> None:
     for kind, condition in _RULES:
         op.execute(f"UPDATE lead_stages SET kind = '{kind}' WHERE kind = 'generic' AND ({condition})")
+    # Legacy readers (stats, analytics, notifications) still filter on the flags:
+    # make them agree with `kind` so a stage lost only by name counts as lost everywhere.
+    op.execute("UPDATE lead_stages SET is_won = (kind = 'won'), is_lost = (kind = 'lost')")
 
 
 def downgrade() -> None:

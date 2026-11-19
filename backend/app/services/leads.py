@@ -153,14 +153,25 @@ def _handle_meeting_stage(db: Session, lead: Lead, changed_by: int | None, extra
     # Re-entering the stage moves the open meeting instead of creating a duplicate.
     m = scheduled_meeting_for(db, lead.id)
     if m is None:
-        m = Meeting(lead_id=lead.id, client_name=lead.client_name, client_phone=lead.phone)
+        m = Meeting(
+            lead_id=lead.id, client_name=lead.client_name, client_phone=lead.phone,
+            address=address, notes=notes, duration_minutes=duration,
+            closer_id=closer_id, setter_id=setter_id,
+        )
         db.add(m)
+    else:
+        # Rescheduling: blank fields mean "unchanged", never "erase what the closer wrote".
+        if address:
+            m.address = address
+        if notes:
+            m.notes = notes
+        if extra.get("duration_minutes"):
+            m.duration_minutes = duration
+        if closer_id:
+            m.closer_id = closer_id
+        if setter_id:
+            m.setter_id = setter_id
     m.meeting_date = meeting_dt
-    m.address = address
-    m.notes = notes
-    m.duration_minutes = duration
-    m.closer_id = closer_id
-    m.setter_id = setter_id
     db.flush()
 
 

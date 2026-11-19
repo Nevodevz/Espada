@@ -33,3 +33,23 @@ def test_closed_meeting_is_not_reused(db, lead, stages):
     db.commit()
     change_lead_stage(db, lead, meet, extra_data={"meeting_date": "2026-12-05", "meeting_time": "10:00"})
     assert db.query(Meeting).filter_by(lead_id=lead.id).count() == 2
+
+
+def test_reschedule_keeps_address_and_comment_when_not_sent(db, lead, stages):
+    meet = stages["Встреча"].id
+    change_lead_stage(db, lead, meet, extra_data={
+        "meeting_date": "2026-12-01", "meeting_time": "12:00", "address": "3 этаж", "comment": "взять договор",
+    })
+    change_lead_stage(db, lead, stages["Созвон"].id)
+    change_lead_stage(db, lead, meet, extra_data={"meeting_date": "2026-12-02", "meeting_time": "10:00", "comment": ""})
+    m = db.query(Meeting).filter_by(lead_id=lead.id).one()
+    assert m.address == "3 этаж" and m.notes == "взять договор"
+
+
+def test_lead_detail_exposes_scheduled_meeting(client, db, admin, lead, stages):
+    from tests.conftest import auth_headers
+    assert client.get(f"/api/leads/{lead.id}", headers=auth_headers(admin)).json()["scheduled_meeting"] is None
+    change_lead_stage(db, lead, stages["Встреча"].id, extra_data={"meeting_date": "2026-12-01", "meeting_time": "12:00"})
+    db.commit()
+    body = client.get(f"/api/leads/{lead.id}", headers=auth_headers(admin)).json()
+    assert body["scheduled_meeting"]["meeting_date"].startswith("2026-12-01T06:00")

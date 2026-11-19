@@ -915,6 +915,7 @@ export default function LeadDetailPage() {
             closer: lead.closer,
             setter_id: lead.setter_id,
             setter: lead.setter,
+            scheduled_meeting: lead.scheduled_meeting,
           }}
           users={users}
           rejectReasons={rejectReasons}

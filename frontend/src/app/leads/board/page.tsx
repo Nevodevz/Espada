@@ -66,7 +66,8 @@ function BoardPage() {
   useEffect(() => {
     const params = new URLSearchParams();
     Object.entries(query).forEach(([key, value]) => { if (value) params.set(key, String(value)); });
-    router.replace(`/leads/board${params.size ? `?${params}` : ""}`, { scroll: false });
+    const qs = params.toString();
+    router.replace(`/leads/board${qs ? `?${qs}` : ""}`, { scroll: false });
   }, [query, router]);
 
   const load = useCallback(async (quiet = false) => {

@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models import Lead, LeadStage, LeadStatus, Meeting, MeetingStatus, User
-from app.routers.leads import LeadOut, _apply_list_filters, _deals_by_lead, _eager_lead, _lead_out
+from app.routers.leads import LeadOut, ScheduledMeetingOut, _apply_list_filters, _deals_by_lead, _eager_lead, _lead_out
 from app.services.lead_board import board_sort_key
 from app.services.leads import active_stages
 
@@ -29,15 +29,6 @@ class StageOut(BaseModel):
     color: str
     position: int
     kind: str
-
-
-class ScheduledMeetingOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    id: int
-    meeting_date: datetime
-    duration_minutes: int
-    closer_id: int | None
-    address: str
 
 
 class CardOut(LeadOut):

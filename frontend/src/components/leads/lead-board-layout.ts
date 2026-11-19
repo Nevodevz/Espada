@@ -39,3 +39,9 @@ export function shouldPoll(state: { visible: boolean; modalOpen: boolean; mutati
 export function keepFormOnError(kind: LeadStage["kind"]): boolean {
   return kind !== "won";
 }
+
+/** Leads without a stage, or on an archived stage — shown in a «Без этапа» column so none vanish. */
+export function cardsWithoutColumn(cards: LeadBoardCard[], stages: LeadStage[]): LeadBoardCard[] {
+  const ids = new Set(stages.map((s) => s.id));
+  return cards.filter((card) => card.stage_id == null || !ids.has(card.stage_id));
+}

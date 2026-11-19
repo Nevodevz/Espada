@@ -16,6 +16,7 @@ from app.models import (
 from app.schemas import UserOut
 from app.services import deals as deal_service
 from app.services.leads import (
+    scheduled_meeting_for,
     change_lead_stage, add_activity, get_lead_timeline, StageTransitionError, active_stages,
 )
 
@@ -231,7 +232,18 @@ class LeadOut(BaseModel):
     deal_status: str = "pending"
 
 
+class ScheduledMeetingOut(BaseModel):
+    """The lead's open meeting — re-entering «Встреча» reschedules it."""
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    meeting_date: datetime
+    duration_minutes: int
+    closer_id: Optional[int] = None
+    address: str = ""
+
+
 class LeadDetailOut(LeadOut):
+    scheduled_meeting: Optional[ScheduledMeetingOut] = None
     stage_history: list[LeadStageHistoryOut] = []
     activities: list[LeadActivityOut] = []
     meetings: list[MeetingBriefOut] = []
@@ -780,7 +792,9 @@ def get_lead(lead_id: int, db: Session = Depends(get_db), _: User = Depends(get_
         )
         payments = [_payment_out(p) for p in rows]
 
+    open_meeting = scheduled_meeting_for(db, lead.id)
     return LeadDetailOut(
+        scheduled_meeting=ScheduledMeetingOut.model_validate(open_meeting) if open_meeting else None,
         **_lead_to_dict(lead),
         source=lead.source,
         service=lead.service,
