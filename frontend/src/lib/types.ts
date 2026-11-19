@@ -14,6 +14,18 @@ export interface ServiceItem {
   position: number;
 }
 
+/** What happens when a lead enters a stage. Mirrors backend `StageKind`. */
+export type StageKind = "generic" | "meeting" | "contract" | "waiting_payment" | "won" | "lost";
+
+export const STAGE_KIND_LABELS: Record<StageKind, string> = {
+  generic: "Обычный",
+  meeting: "Встреча",
+  contract: "Договор",
+  waiting_payment: "Ожидание оплаты",
+  won: "Оплачено",
+  lost: "Минус",
+};
+
 export interface LeadStage {
   id: number;
   name: string;
@@ -24,6 +36,8 @@ export interface LeadStage {
   color: string;
   /** Archived stages stay readable in history but never appear in pickers. */
   is_archived: boolean;
+  /** Source of truth for stage behaviour; never inferred from the name. */
+  kind: StageKind;
 }
 
 export interface RejectReason {

@@ -6,7 +6,8 @@ import { Shell } from "@/components/Shell";
 import { useApp } from "@/context/AppContext";
 import { settingsApi } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
-import type { LeadSource, ServiceItem, LeadStage, RejectReason, ExpenseCategory, Account } from "@/lib/types";
+import type { LeadSource, ServiceItem, LeadStage, RejectReason, ExpenseCategory, Account, StageKind } from "@/lib/types";
+import { STAGE_KIND_LABELS } from "@/lib/types";
 import { Button, Input, PageHeader } from "@/components/ui";
 
 type Tab = "sources" | "services" | "stages" | "reject" | "expense" | "accounts";
@@ -220,16 +221,18 @@ function StagesSection({
                     onChange={(e) => setEditData((d) => ({ ...d, norm_days: e.target.value ? Number(e.target.value) : null }))}
                   />
                 </div>
-                <label style={{ fontSize: 12, color: "var(--text3)", display: "flex", alignItems: "center", gap: 4, paddingBottom: 8 }}>
-                  <input type="checkbox" checked={editData.is_won ?? stage.is_won}
-                    onChange={(e) => setEditData((d) => ({ ...d, is_won: e.target.checked }))} />
-                  Оплачено
-                </label>
-                <label style={{ fontSize: 12, color: "var(--text3)", display: "flex", alignItems: "center", gap: 4, paddingBottom: 8 }}>
-                  <input type="checkbox" checked={editData.is_lost ?? stage.is_lost}
-                    onChange={(e) => setEditData((d) => ({ ...d, is_lost: e.target.checked }))} />
-                  Минус
-                </label>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <span style={{ fontSize: 12, color: "var(--text3)" }}>Тип (что происходит при переходе)</span>
+                  <select
+                    className="field-input"
+                    value={editData.kind ?? stage.kind}
+                    onChange={(e) => setEditData((d) => ({ ...d, kind: e.target.value as StageKind }))}
+                  >
+                    {(Object.keys(STAGE_KIND_LABELS) as StageKind[]).map((k) => (
+                      <option key={k} value={k}>{STAGE_KIND_LABELS[k]}</option>
+                    ))}
+                  </select>
+                </div>
                 <Button variant="primary" size="sm" onClick={() => handleSave(stage.id)} disabled={busy}>Сохранить</Button>
                 <Button variant="ghost" size="sm" onClick={() => { setEditId(null); setEditData({}); }}>Отмена</Button>
               </div>
@@ -239,8 +242,11 @@ function StagesSection({
                 {stage.norm_days != null && (
                   <span className="sett-badge" style={{ background: "var(--bg3)", color: "var(--text3)" }}>{stage.norm_days}д</span>
                 )}
-                {stage.is_won && <span className="sett-badge" style={{ background: "var(--green-bg)", color: "var(--green)" }}>Оплачено</span>}
-                {stage.is_lost && <span className="sett-badge" style={{ background: "var(--red-bg)", color: "var(--red)" }}>Минус</span>}
+                {stage.kind === "won" && <span className="sett-badge" style={{ background: "var(--green-bg)", color: "var(--green)" }}>Оплачено</span>}
+                {stage.kind === "lost" && <span className="sett-badge" style={{ background: "var(--red-bg)", color: "var(--red)" }}>Минус</span>}
+                {stage.kind !== "generic" && stage.kind !== "won" && stage.kind !== "lost" && (
+                  <span className="sett-badge" style={{ background: "var(--bg3)", color: "var(--text2)" }}>{STAGE_KIND_LABELS[stage.kind]}</span>
+                )}
                 <div className="sett-actions">
                   <button className="sett-icon-btn" onClick={() => onMoveUp(stage.id)} disabled={idx === 0} title="Вверх">
                     <span className="material-symbols-outlined" style={{ fontSize: 16 }}>arrow_upward</span>

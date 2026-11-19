@@ -3,20 +3,12 @@
 import { useState } from "react";
 import { Modal } from "@/components/Modal";
 import { Button, FormField, Input, Select } from "@/components/ui";
-import type { LeadStage, User, RejectReason } from "@/lib/types";
+import type { LeadStage, User, RejectReason, StageKind } from "@/lib/types";
 import { closerOptions } from "@/lib/roles";
 
-// Must mirror backend app/services/leads.py _stage_kind
-export function stageKind(
-  s: LeadStage
-): "meeting" | "contract" | "waiting_payment" | "won" | "lost" | "generic" {
-  const n = s.name.toLowerCase();
-  if (s.is_lost || n.includes("минус")) return "lost";
-  if (s.is_won || n.includes("оплач")) return "won";
-  if (n.includes("встреч")) return "meeting";
-  if (n.includes("договор")) return "contract";
-  if (n.includes("ожидани") || n.includes("ожид")) return "waiting_payment";
-  return "generic";
+/** Stage behaviour comes from the stored `kind` (backend `LeadStage.kind`). */
+export function stageKind(s: Pick<LeadStage, "kind">): StageKind {
+  return s.kind ?? "generic";
 }
 
 export const STAGE_ACTION_LABELS: Record<string, string> = {

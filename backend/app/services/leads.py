@@ -40,18 +40,8 @@ def _parse_date(val: str | None) -> date | None:
 
 
 def _stage_kind(stage: LeadStage) -> str:
-    name = stage.name.lower()
-    if stage.is_lost or "минус" in name:
-        return "lost"
-    if stage.is_won or "оплач" in name:
-        return "won"
-    if "встреч" in name:
-        return "meeting"
-    if "договор" in name:
-        return "contract"
-    if "ожидани" in name or "ожид" in name:
-        return "waiting_payment"
-    return "generic"
+    """Behaviour of a stage — read from `LeadStage.kind`, never guessed from the name."""
+    return stage.kind or "generic"
 
 
 def active_stages(db: Session) -> list[LeadStage]:

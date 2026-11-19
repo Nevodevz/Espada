@@ -45,12 +45,12 @@ def seed_lookups():
         stages = [
             ("Новый лид",        {}),
             ("Созвон",           {}),
-            ("Встреча",          {}),
-            ("Договор",          {}),
-            ("Ожидание оплаты",  {}),
-            ("Оплачено",         {"is_won": True,  "color": "#16a34a"}),
+            ("Встреча",          {"kind": "meeting"}),
+            ("Договор",          {"kind": "contract"}),
+            ("Ожидание оплаты",  {"kind": "waiting_payment"}),
+            ("Оплачено",         {"is_won": True,  "kind": "won",  "color": "#16a34a"}),
             ("Разработка",       {}),
-            ("Минус",            {"is_lost": True, "color": "#e03b3b"}),
+            ("Минус",            {"is_lost": True, "kind": "lost", "color": "#e03b3b"}),
         ]
         for i, (name, extra) in enumerate(stages):
             if not db.query(LeadStage).filter_by(name=name).first():

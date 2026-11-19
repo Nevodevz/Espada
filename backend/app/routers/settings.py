@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_admin
 from app.models import (
-    LeadSource, Service, LeadStage, RejectReason, ExpenseCategory, Account, User,
+    LeadSource, Service, LeadStage, RejectReason, ExpenseCategory, Account, User, StageKind,
 )
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -30,6 +30,7 @@ class StageCreate(BaseModel):
     is_won: bool = False
     is_lost: bool = False
     color: str = "#4648d4"
+    kind: StageKind = "generic"
 
 class StageUpdate(BaseModel):
     name: str | None = None
@@ -40,6 +41,7 @@ class StageUpdate(BaseModel):
     position: int | None = None
     # Archiving replaces deletion: leads and history keep referencing the stage.
     is_archived: bool | None = None
+    kind: StageKind | None = None
 
 class AccountCreate(BaseModel):
     name: str
@@ -53,6 +55,13 @@ class AccountUpdate(BaseModel):
 
 
 # ── Generic helpers ───────────────────────────────────────────────
+
+def _set_kind(stage: LeadStage, kind: str) -> None:
+    """`kind` is the source of truth; is_won / is_lost mirror it for legacy readers."""
+    stage.kind = kind
+    stage.is_won = kind == "won"
+    stage.is_lost = kind == "lost"
+
 
 def _serialize(obj: Any) -> dict:
     return {c.name: getattr(obj, c.name) for c in obj.__table__.columns}
@@ -149,9 +158,13 @@ def list_stages(
 @router.post("/stages", status_code=201)
 def create_stage(body: StageCreate, db: Session = Depends(get_db), _=Depends(require_admin)):
     max_pos = db.query(LeadStage).count()
-    r = LeadStage(name=body.name, position=max_pos,
-                  norm_days=body.norm_days, is_won=body.is_won,
-                  is_lost=body.is_lost, color=body.color)
+    kind = body.kind
+    if kind == "generic" and body.is_lost:
+        kind = "lost"
+    elif kind == "generic" and body.is_won:
+        kind = "won"
+    r = LeadStage(name=body.name, position=max_pos, norm_days=body.norm_days, color=body.color)
+    _set_kind(r, kind)
     db.add(r); db.commit(); db.refresh(r)
     return _serialize(r)
 
@@ -163,6 +176,12 @@ def update_stage(id: int, body: StageUpdate, db: Session = Depends(get_db), _=De
         val = getattr(body, field)
         if val is not None:
             setattr(r, field, val)
+    if body.kind is not None:
+        _set_kind(r, body.kind)
+    elif body.is_lost:
+        _set_kind(r, "lost")
+    elif body.is_won:
+        _set_kind(r, "won")
     db.commit(); db.refresh(r)
     return _serialize(r)
 

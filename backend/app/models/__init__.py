@@ -1,4 +1,5 @@
 import enum
+from typing import Literal, get_args
 from datetime import datetime, date
 
 from sqlalchemy import (
@@ -293,6 +294,13 @@ class LeadStage(Base):
     # Archived stages stay in the DB so history and old leads remain readable,
     # but they are excluded from the active sequence: forms, funnel, stage pickers.
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
+    # What happens when a lead enters the stage (see StageKind). Stored explicitly
+    # so renaming a stage never changes its behaviour.
+    kind: Mapped[str] = mapped_column(String(20), default="generic", nullable=False, server_default="generic")
+
+
+StageKind = Literal["generic", "meeting", "contract", "waiting_payment", "won", "lost"]
+STAGE_KINDS: tuple[str, ...] = get_args(StageKind)
 
 
 class RejectReason(Base):

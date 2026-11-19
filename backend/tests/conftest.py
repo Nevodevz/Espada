@@ -100,13 +100,13 @@ def other_staff(db) -> User:
 @pytest.fixture()
 def stages(db) -> dict[str, LeadStage]:
     rows = [
-        LeadStage(name="Новый лид", position=0),
-        LeadStage(name="Созвон", position=1),
-        LeadStage(name="Встреча", position=2),
-        LeadStage(name="Договор", position=3),
-        LeadStage(name="Ожидание оплаты", position=4),
-        LeadStage(name="Оплачено", position=5, is_won=True),
-        LeadStage(name="Минус", position=6, is_lost=True),
+        LeadStage(name="Новый лид", position=0, kind="generic"),
+        LeadStage(name="Созвон", position=1, kind="generic"),
+        LeadStage(name="Встреча", position=2, kind="meeting"),
+        LeadStage(name="Договор", position=3, kind="contract"),
+        LeadStage(name="Ожидание оплаты", position=4, kind="waiting_payment"),
+        LeadStage(name="Оплачено", position=5, is_won=True, kind="won"),
+        LeadStage(name="Минус", position=6, is_lost=True, kind="lost"),
     ]
     for r in rows:
         db.add(r)
