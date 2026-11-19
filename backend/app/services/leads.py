@@ -1,11 +1,11 @@
-from datetime import datetime, date, timezone
+from datetime import datetime, date, timedelta, timezone
 from typing import Any
 
 from sqlalchemy.orm import Session
 
 from app.models import (
     Lead, LeadStageHistory, LeadActivity, LeadStage, Meeting, Deal, DealPayment,
-    PaymentStatus,
+    MeetingStatus, PaymentStatus,
 )
 from app.services import deals as deal_service
 
@@ -109,6 +109,24 @@ def change_lead_stage(
     return entry
 
 
+# Users enter wall-clock time in Bishkek (UTC+6, no DST); storage is UTC.
+BISHKEK_TZ = timezone(timedelta(hours=6))
+
+
+def scheduled_meeting_for(db: Session, lead_id: int) -> Meeting | None:
+    """The lead's open (scheduled, top-level) meeting, if any — newest first."""
+    return (
+        db.query(Meeting)
+        .filter(
+            Meeting.lead_id == lead_id,
+            Meeting.status == MeetingStatus.scheduled,
+            Meeting.parent_id.is_(None),
+        )
+        .order_by(Meeting.meeting_date.desc(), Meeting.id.desc())
+        .first()
+    )
+
+
 def _handle_meeting_stage(db: Session, lead: Lead, changed_by: int | None, extra: dict) -> None:
     meeting_date_str = extra.get("meeting_date") or extra.get("date")
     meeting_time_str = extra.get("meeting_time") or extra.get("time", "00:00")
@@ -118,32 +136,31 @@ def _handle_meeting_stage(db: Session, lead: Lead, changed_by: int | None, extra
     closer_id = extra.get("closer_id") or lead.closer_id
     setter_id = extra.get("setter_id") or lead.setter_id
 
+    meeting_dt = datetime.now(timezone.utc)
     if meeting_date_str:
         try:
-            dt_str = f"{meeting_date_str[:10]}T{meeting_time_str or '00:00'}:00"
-            meeting_dt = datetime.fromisoformat(dt_str).replace(tzinfo=timezone.utc)
-        except Exception:
-            meeting_dt = datetime.now(timezone.utc)
-    else:
-        meeting_dt = datetime.now(timezone.utc)
+            local = datetime.fromisoformat(f"{meeting_date_str[:10]}T{meeting_time_str or '00:00'}:00")
+            meeting_dt = local.replace(tzinfo=BISHKEK_TZ).astimezone(timezone.utc)
+        except ValueError:
+            pass
 
     try:
         duration = int(extra.get("duration_minutes") or 60)
     except (TypeError, ValueError):
         duration = 60
+    duration = max(5, min(duration, 24 * 60))
 
-    m = Meeting(
-        lead_id=lead.id,
-        client_name=lead.client_name,
-        client_phone=lead.phone,
-        meeting_date=meeting_dt,
-        address=address,
-        notes=notes,
-        duration_minutes=max(5, min(duration, 24 * 60)),
-        closer_id=closer_id,
-        setter_id=setter_id,
-    )
-    db.add(m)
+    # Re-entering the stage moves the open meeting instead of creating a duplicate.
+    m = scheduled_meeting_for(db, lead.id)
+    if m is None:
+        m = Meeting(lead_id=lead.id, client_name=lead.client_name, client_phone=lead.phone)
+        db.add(m)
+    m.meeting_date = meeting_dt
+    m.address = address
+    m.notes = notes
+    m.duration_minutes = duration
+    m.closer_id = closer_id
+    m.setter_id = setter_id
     db.flush()
 
 
