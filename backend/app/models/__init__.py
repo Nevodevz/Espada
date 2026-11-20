@@ -814,3 +814,27 @@ class WhatsAppState(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     state: Mapped[str] = mapped_column(String(16), default="unknown", nullable=False, server_default="unknown")
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+# ── Lead tasks (CRM, not personal boards) ─────────────────────────
+class LeadTask(Base):
+    """A next step on a lead: call / message / meeting / other, with a result."""
+    __tablename__ = "lead_tasks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    lead_id: Mapped[int] = mapped_column(ForeignKey("leads.id", ondelete="CASCADE"), index=True, nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), default="call", nullable=False)        # call|message|meeting|other
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True, nullable=False)
+    assignee_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    comment: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(16), default="open", nullable=False, index=True)  # open|done|canceled
+    # connected | no_answer | rescheduled | done | auto_canceled
+    result: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    result_note: Mapped[str] = mapped_column(Text, default="")
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    lead: Mapped["Lead"] = relationship(foreign_keys=[lead_id])
+    assignee: Mapped["User | None"] = relationship(foreign_keys=[assignee_id])
