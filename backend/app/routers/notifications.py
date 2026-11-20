@@ -6,13 +6,16 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 
 from app.core.database import get_db
+from app.core.config import settings
 from app.core.deps import get_current_user
+from app.services.whatsapp.access import can_use_whatsapp
 from app.models import (
     Task, Board, User, Role,
     Meeting, MeetingStatus,
     Lead, LeadStatus, LeadStage,
     Deal,
     AccountBalance, FinanceTransaction,
+    WhatsAppChat, WhatsAppState,
 )
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
@@ -24,8 +27,6 @@ def _is_finance_admin(user: User) -> bool:
     return user.role == Role.admin or user.is_founder or user.position == "Финансовый директор"
 
 
-def _is_sales(user: User) -> bool:
-    return user.position in ("Сеттер", "Клоузер", "Руководитель продаж") or user.role == Role.admin or user.is_founder
 
 
 def _notif(nid: str, kind: str, severity: str, title: str, meta: str = "", link: str | None = None, **extra: Any) -> dict:
@@ -39,6 +40,8 @@ def get_notifications(db: Session = Depends(get_db), user: User = Depends(get_cu
     today_bk = now_bk.date()
 
     notifs: list[dict] = []
+    # Sales = admins, founders, closers and sales-department members (same rule as WhatsApp access).
+    is_sales = can_use_whatsapp(db, user)
 
     # ─── 1. Overdue tasks (owner = me) ────────────────────────────
     overdue_tasks = (
@@ -143,7 +146,7 @@ def get_notifications(db: Session = Depends(get_db), user: User = Depends(get_cu
         ))
 
     # ─── 6. Overdue next_action on leads (setter/closer) ─────────
-    if _is_sales(user):
+    if is_sales:
         overdue_action_q = (
             db.query(Lead)
             .filter(
@@ -167,7 +170,7 @@ def get_notifications(db: Session = Depends(get_db), user: User = Depends(get_cu
             ))
 
     # ─── 7. Active leads without next_action (setter/closer) ─────
-    if _is_sales(user):
+    if is_sales:
         # Final stages (won/lost) — don't need next action
         final_stage_ids = [s.id for s in db.query(LeadStage).filter(
             (LeadStage.is_won == True) | (LeadStage.is_lost == True)
@@ -198,7 +201,7 @@ def get_notifications(db: Session = Depends(get_db), user: User = Depends(get_cu
     # ─── 8. Overdue payments (admin/finance) ─────────────────────
     # Driven by the payment schedule — the old Deal.expected_payment_date could
     # not represent partial payments or multi-instalment deals.
-    if _is_finance_admin(user) or _is_sales(user):
+    if _is_finance_admin(user) or is_sales:
         from app.services.deals import overdue_payments
         for p in overdue_payments(db, today_bk)[:10]:
             deal = db.query(Deal).filter(Deal.id == p.deal_id).first()
@@ -274,4 +277,50 @@ def get_notifications(db: Session = Depends(get_db), user: User = Depends(get_cu
         except Exception:
             pass
 
+    # ─── 11. WhatsApp ─────────────────────────────────────────────
+    notifs.extend(_whatsapp_notifications(db, user, is_sales))
+
     return {"count": len(notifs), "items": notifs}
+
+
+def _whatsapp_notifications(db: Session, user: User, is_sales: bool) -> list[dict]:
+    out: list[dict] = []
+    if is_sales:
+        unassigned = (
+            db.query(func.count(func.distinct(Lead.id)))
+            .join(WhatsAppChat, WhatsAppChat.lead_id == Lead.id)
+            .filter(Lead.status == LeadStatus.active, Lead.setter_id.is_(None), WhatsAppChat.is_ignored == False)  # noqa: E712
+            .scalar() or 0
+        )
+        if unassigned:
+            out.append(_notif(
+                "wa_unassigned", "whatsapp", "warning",
+                f"{unassigned} неразобранных заявок из WhatsApp",
+                "Возьмите лида себе на доске",
+                link="/leads/board?unassigned=true",
+            ))
+        wrote = (
+            db.query(Lead).join(WhatsAppChat, WhatsAppChat.lead_id == Lead.id).join(LeadStage, LeadStage.id == Lead.stage_id)
+            .filter(
+                Lead.status == LeadStatus.active, LeadStage.kind == "won", WhatsAppChat.unread_count > 0,
+                (Lead.setter_id == user.id) | (Lead.closer_id == user.id),
+            )
+            .limit(10).all()
+        )
+        for lead in wrote:
+            out.append(_notif(
+                f"wa_client_wrote_{lead.id}", "whatsapp", "info",
+                f"Клиент написал: {lead.client_name}",
+                "Действующий клиент — поддержка или допродажа",
+                link=f"/leads/{lead.id}",
+            ))
+    if (user.role == Role.admin or user.is_founder) and settings.EVOLUTION_URL:
+        state = db.get(WhatsAppState, 1)
+        if state is None or state.state != "open":
+            out.append(_notif(
+                "wa_disconnected", "whatsapp", "critical",
+                "WhatsApp отключён — заявки не принимаются",
+                "Подключите номер заново",
+                link="/admin/whatsapp",
+            ))
+    return out

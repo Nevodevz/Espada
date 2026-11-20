@@ -12,7 +12,9 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
-from app.models import Lead, LeadStage, LeadStatus, Meeting, MeetingStatus, User
+from sqlalchemy import func
+
+from app.models import Lead, LeadStage, LeadStatus, Meeting, MeetingStatus, User, WhatsAppChat
 from app.routers.leads import LeadOut, ScheduledMeetingOut, _apply_list_filters, _deals_by_lead, _eager_lead, _lead_out
 from app.services.lead_board import board_sort_key
 from app.services.leads import active_stages
@@ -33,11 +35,23 @@ class StageOut(BaseModel):
 
 class CardOut(LeadOut):
     scheduled_meeting: ScheduledMeetingOut | None = None
+    whatsapp_unread: int = 0
 
 
 class BoardOut(BaseModel):
     stages: list[StageOut]
     leads: list[CardOut]
+
+
+def _unread_by_lead(db: Session, lead_ids: list[int]) -> dict[int, int]:
+    if not lead_ids:
+        return {}
+    rows = (
+        db.query(WhatsAppChat.lead_id, func.sum(WhatsAppChat.unread_count))
+        .filter(WhatsAppChat.lead_id.in_(lead_ids))
+        .group_by(WhatsAppChat.lead_id).all()
+    )
+    return {lead_id: int(total or 0) for lead_id, total in rows}
 
 
 def _scheduled_meetings(db: Session, lead_ids: list[int]) -> dict[int, Meeting]:
@@ -91,7 +105,9 @@ def get_board(
         if closed_ids:
             query = query.filter(or_(Lead.stage_id.is_(None), Lead.stage_id.notin_(closed_ids)))
 
-    leads = sorted(query.all(), key=board_sort_key)
+    rows = query.all()
+    unread = _unread_by_lead(db, [lead.id for lead in rows])
+    leads = sorted(rows, key=lambda lead: board_sort_key(lead, unread.get(lead.id, 0)))
     deals = _deals_by_lead(db, [lead.id for lead in leads])
     meetings = _scheduled_meetings(db, [lead.id for lead in leads])
     cards = []
@@ -100,5 +116,6 @@ def get_board(
         cards.append(CardOut(
             **_lead_out(db, lead, deals.get(lead.id)).model_dump(),
             scheduled_meeting=ScheduledMeetingOut.model_validate(meeting) if meeting else None,
+            whatsapp_unread=unread.get(lead.id, 0),
         ))
     return BoardOut(stages=[StageOut.model_validate(s) for s in active_stages(db)], leads=cards)

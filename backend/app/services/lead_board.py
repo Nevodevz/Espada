@@ -18,6 +18,6 @@ def _ts(value: datetime | None) -> float:
     return value.timestamp()
 
 
-def board_sort_key(lead: Lead) -> tuple:
-    """Most recently active first; id breaks ties so the order is stable."""
-    return (-_ts(lead.updated_at or lead.created_at), -lead.id)
+def board_sort_key(lead: Lead, unread: int = 0) -> tuple:
+    """Unread WhatsApp first, then most recently active; id breaks ties so the order is stable."""
+    return (0 if unread else 1, -_ts(lead.updated_at or lead.created_at), -lead.id)
