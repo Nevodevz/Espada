@@ -181,6 +181,26 @@ def _deal_out(db: Session, deal: Deal | None) -> Optional[DealOut]:
     return out
 
 
+class NextTaskOut(BaseModel):
+    """The lead's nearest open task (board badge, list column)."""
+    id: int
+    kind: str
+    due_at: datetime
+    overdue: bool
+    assignee_id: Optional[int] = None
+
+
+def task_extras(db: Session, lead_ids: list[int]) -> tuple[dict, dict]:
+    """Nearest open task and missed-call streak per lead — two batched queries."""
+    from app.services.lead_tasks import next_tasks, no_answer_streaks
+    now = datetime.now(timezone.utc)
+    nxt = {}
+    for lead_id, t in next_tasks(db, lead_ids).items():
+        due = t.due_at if t.due_at.tzinfo else t.due_at.replace(tzinfo=timezone.utc)
+        nxt[lead_id] = NextTaskOut(id=t.id, kind=t.kind, due_at=t.due_at, overdue=due < now, assignee_id=t.assignee_id)
+    return nxt, no_answer_streaks(db, lead_ids)
+
+
 class LeadOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -231,6 +251,8 @@ class LeadOut(BaseModel):
     remaining_amount: int = 0
     deal_status: str = "pending"
 
+    next_task: Optional[NextTaskOut] = None
+    no_answer_streak: int = 0
 
 class ScheduledMeetingOut(BaseModel):
     """The lead's open meeting — re-entering «Встреча» reschedules it."""
@@ -594,10 +616,14 @@ def list_leads(
     total = q.count()
     items = q.order_by(Lead.created_at.desc()).offset(offset).limit(limit).all()
     deals = _deals_by_lead(db, [l.id for l in items])
-    return LeadListResponse(
-        items=[_lead_out(db, l, deals.get(l.id)) for l in items],
-        total=total,
-    )
+    nxt, streaks = task_extras(db, [l.id for l in items])
+    outs = []
+    for l in items:
+        out = _lead_out(db, l, deals.get(l.id))
+        out.next_task = nxt.get(l.id)
+        out.no_answer_streak = streaks.get(l.id, 0)
+        outs.append(out)
+    return LeadListResponse(items=outs, total=total)
 
 
 # ─────────────────────────── Funnel (must be before /{lead_id}) ──

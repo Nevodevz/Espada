@@ -410,29 +410,31 @@ def problems(db: Session) -> list[dict]:
             "link": None,
         })
 
-    # ── Leads without next action ──
-    no_action_count = db.query(func.count(Lead.id)).filter(
-        Lead.status == "active",
-        Lead.next_action_type == "",
-    ).scalar() or 0
-    if no_action_count > 5:
+    # ── Open leads without an open task / with an overdue task (lead tasks) ──
+    from app.models import LeadStage, LeadTask
+    closed_ids = [sid for (sid,) in db.query(LeadStage.id).filter(LeadStage.kind.in_(("won", "lost")))]
+    open_leads = db.query(Lead.id).filter(Lead.status == "active")
+    if closed_ids:
+        open_leads = open_leads.filter((Lead.stage_id.is_(None)) | (Lead.stage_id.notin_(closed_ids)))
+    with_task = db.query(LeadTask.lead_id).filter(LeadTask.status == "open")
+    no_task_count = open_leads.filter(Lead.id.notin_(with_task)).count()
+    if no_task_count > 5:
         issues.append({
             "severity": "warning",
-            "message": f"{no_action_count} активных лидов без следующего действия",
-            "link": "/leads",
+            "message": f"{no_task_count} открытых лидов без задачи",
+            "link": "/leads/board?no_task=true",
         })
 
-    # ── Overdue next action ──
-    overdue_count = db.query(func.count(Lead.id)).filter(
-        Lead.status == "active",
-        Lead.next_action_at.isnot(None),
-        Lead.next_action_at < datetime.now(BISHKEK_OFFSET),
-    ).scalar() or 0
+    overdue_count = (
+        db.query(func.count(func.distinct(LeadTask.lead_id)))
+        .filter(LeadTask.status == "open", LeadTask.due_at < datetime.now(timezone.utc))
+        .scalar() or 0
+    )
     if overdue_count > 0:
         issues.append({
             "severity": "error",
-            "message": f"{overdue_count} лидов с просроченным следующим действием",
-            "link": "/leads",
+            "message": f"{overdue_count} лидов с просроченной задачей",
+            "link": "/leads/board?overdue=true",
         })
 
     # ── Overdue expected payments ──

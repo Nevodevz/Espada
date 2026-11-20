@@ -8,6 +8,7 @@ from sqlalchemy import func
 from app.core.database import get_db
 from app.core.config import settings
 from app.core.deps import get_current_user
+from app.services.reminders import due_reminders
 from app.services.whatsapp.access import can_use_whatsapp
 from app.services.whatsapp.runtime import whatsapp_configured
 from app.models import (
@@ -146,58 +147,9 @@ def get_notifications(db: Session = Depends(get_db), user: User = Depends(get_cu
             link="/dept/sales/meetings",
         ))
 
-    # ─── 6. Overdue next_action on leads (setter/closer) ─────────
+    # ─── 6–7. Lead tasks: due soon, overdue, leads without a task ───
     if is_sales:
-        overdue_action_q = (
-            db.query(Lead)
-            .filter(
-                Lead.status == LeadStatus.active,
-                Lead.next_action_at.isnot(None),
-                Lead.next_action_at < now_utc,
-            )
-        )
-        if not (user.role == Role.admin or user.is_founder):
-            overdue_action_q = overdue_action_q.filter(
-                (Lead.setter_id == user.id) | (Lead.closer_id == user.id)
-            )
-        overdue_actions = overdue_action_q.limit(10).all()
-        for lead in overdue_actions:
-            na = lead.next_action_at.astimezone(_BISHKEK) if lead.next_action_at.tzinfo else lead.next_action_at.replace(tzinfo=timezone.utc).astimezone(_BISHKEK)
-            notifs.append(_notif(
-                f"lead_action_overdue_{lead.id}", "lead_overdue", "warning",
-                f"Просрочено действие: {lead.client_name or lead.company_name}",
-                f"Было {na.strftime('%d.%m %H:%M')} · {lead.next_action_type or 'действие'}",
-                link=f"/leads/{lead.id}",
-            ))
-
-    # ─── 7. Active leads without next_action (setter/closer) ─────
-    if is_sales:
-        # Final stages (won/lost) — don't need next action
-        final_stage_ids = [s.id for s in db.query(LeadStage).filter(
-            (LeadStage.is_won == True) | (LeadStage.is_lost == True)
-        ).all()]
-
-        no_action_q = (
-            db.query(Lead)
-            .filter(
-                Lead.status == LeadStatus.active,
-                Lead.next_action_at.is_(None),
-            )
-        )
-        if final_stage_ids:
-            no_action_q = no_action_q.filter(Lead.stage_id.notin_(final_stage_ids))
-        if not (user.role == Role.admin or user.is_founder):
-            no_action_q = no_action_q.filter(
-                (Lead.setter_id == user.id) | (Lead.closer_id == user.id)
-            )
-        no_action_leads = no_action_q.limit(5).all()
-        if no_action_leads:
-            notifs.append(_notif(
-                "leads_no_next_action", "lead_warning", "warning",
-                f"Лиды без следующего действия: {len(no_action_leads)}",
-                "Назначьте следующее действие",
-                link="/leads",
-            ))
+        notifs.extend(due_reminders(db, user, now_utc))
 
     # ─── 8. Overdue payments (admin/finance) ─────────────────────
     # Driven by the payment schedule — the old Deal.expected_payment_date could

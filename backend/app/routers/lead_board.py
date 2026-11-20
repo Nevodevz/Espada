@@ -15,7 +15,7 @@ from app.core.deps import get_current_user
 from sqlalchemy import func
 
 from app.models import Lead, LeadStage, LeadStatus, Meeting, MeetingStatus, User, WhatsAppChat
-from app.routers.leads import LeadOut, ScheduledMeetingOut, _apply_list_filters, _deals_by_lead, _eager_lead, _lead_out
+from app.routers.leads import LeadOut, ScheduledMeetingOut, task_extras, _apply_list_filters, _deals_by_lead, _eager_lead, _lead_out
 from app.services.lead_board import board_sort_key
 from app.services.leads import active_stages
 
@@ -87,6 +87,8 @@ def get_board(
     mine: bool = False,
     unassigned: bool = False,
     show_closed: bool = False,
+    overdue: bool = False,
+    no_task: bool = False,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -106,8 +108,14 @@ def get_board(
             query = query.filter(or_(Lead.stage_id.is_(None), Lead.stage_id.notin_(closed_ids)))
 
     rows = query.all()
-    unread = _unread_by_lead(db, [lead.id for lead in rows])
-    leads = sorted(rows, key=lambda lead: board_sort_key(lead, unread.get(lead.id, 0)))
+    ids = [lead.id for lead in rows]
+    unread = _unread_by_lead(db, ids)
+    nxt, streaks = task_extras(db, ids)
+    if overdue:
+        rows = [lead for lead in rows if lead.id in nxt and nxt[lead.id].overdue]
+    if no_task:
+        rows = [lead for lead in rows if lead.id not in nxt]
+    leads = sorted(rows, key=lambda lead: board_sort_key(lead, unread.get(lead.id, 0), nxt.get(lead.id)))
     deals = _deals_by_lead(db, [lead.id for lead in leads])
     meetings = _scheduled_meetings(db, [lead.id for lead in leads])
     cards = []
@@ -118,4 +126,6 @@ def get_board(
             scheduled_meeting=ScheduledMeetingOut.model_validate(meeting) if meeting else None,
             whatsapp_unread=unread.get(lead.id, 0),
         ))
+        cards[-1].next_task = nxt.get(lead.id)
+        cards[-1].no_answer_streak = streaks.get(lead.id, 0)
     return BoardOut(stages=[StageOut.model_validate(s) for s in active_stages(db)], leads=cards)
