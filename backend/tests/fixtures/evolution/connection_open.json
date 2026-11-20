@@ -1,0 +1,1 @@
+{"event": "connection.update", "instance": "espada-sales", "destination": "http://backend:8000/api/whatsapp/webhook/s", "date_time": "2026-11-20T10:00:00.000Z", "sender": "996555000000@s.whatsapp.net", "server_url": "http://evolution:8080", "apikey": "k", "data": {"instance": "espada-sales", "state": "open", "statusReason": 200}}

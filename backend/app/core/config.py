@@ -25,6 +25,17 @@ class Settings(BaseSettings):
     MEDIA_URL_PREFIX: str = "/media"
     MAX_AVATAR_BYTES: int = 5 * 1024 * 1024  # 5 MB
 
+    # ── WhatsApp (Evolution API v2.3.7, see services/whatsapp) ────
+    # Empty EVOLUTION_URL = integration disabled.
+    EVOLUTION_URL: str = ""
+    EVOLUTION_API_KEY: str = ""
+    WHATSAPP_INSTANCE: str = "espada-sales"
+    WHATSAPP_WEBHOOK_SECRET: str = ""
+    WHATSAPP_WEBHOOK_BASE: str = "http://backend:8000"
+    # Client files live OUTSIDE MEDIA_ROOT: nginx serves MEDIA_ROOT publicly.
+    WHATSAPP_MEDIA_ROOT: str = "/app/whatsapp_media"
+    WHATSAPP_MAX_UPLOAD_BYTES: int = 16 * 1024 * 1024
+
     @property
     def database_url(self) -> str:
         return (
