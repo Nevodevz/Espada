@@ -1,0 +1,57 @@
+# Local WhatsApp stand: PostgreSQL + Evolution API for a TEST number only.
+# NEVER scan the sales department number here — its leads would land in this database.
+#
+#   docker compose -f docker-compose.whatsapp-dev.yml up -d
+#
+# Backend (run locally, see README) needs:
+#   POSTGRES_HOST=localhost POSTGRES_PORT=55432 POSTGRES_PASSWORD=pass
+#   EVOLUTION_URL=http://127.0.0.1:8088 EVOLUTION_API_KEY=local-evolution-key
+#   WHATSAPP_WEBHOOK_SECRET=<any> WHATSAPP_WEBHOOK_BASE=http://host.docker.internal:8001
+name: espada-whatsapp-dev
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: espada
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: espada
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U espada"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  evolution:
+    image: evoapicloud/evolution-api:v2.3.7
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SERVER_URL: http://127.0.0.1:8088
+      SERVER_DISABLE_MANAGER: "true"
+      SERVER_DISABLE_DOCS: "true"
+      AUTHENTICATION_API_KEY: local-evolution-key
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://espada:pass@db:5432/espada?schema=evolution
+      DATABASE_CONNECTION_CLIENT_NAME: evolution
+      CACHE_REDIS_ENABLED: "false"
+      CACHE_LOCAL_ENABLED: "true"
+      DEL_INSTANCE: "false"
+      LANGUAGE: ru
+      CONFIG_SESSION_PHONE_CLIENT: Espada-dev
+      QRCODE_LIMIT: "30"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:8088:8080"
+    volumes:
+      - evolution_instances:/evolution/instances
+
+volumes:
+  pgdata:
+  evolution_instances:

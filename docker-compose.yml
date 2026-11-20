@@ -31,11 +31,49 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
       ENVIRONMENT: ${ENVIRONMENT:-production}
       MEDIA_ROOT: /app/media
+      # WhatsApp (Evolution API). Empty EVOLUTION_API_KEY/WHATSAPP_WEBHOOK_SECRET
+      # keep the integration inert until they are set in .env.
+      EVOLUTION_URL: http://evolution:8080
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-}
+      WHATSAPP_INSTANCE: ${WHATSAPP_INSTANCE:-espada-sales}
+      WHATSAPP_WEBHOOK_SECRET: ${WHATSAPP_WEBHOOK_SECRET:-}
+      WHATSAPP_WEBHOOK_BASE: http://backend:8000
+      WHATSAPP_MEDIA_ROOT: /app/whatsapp_media
     volumes:
       # Uploaded avatars must survive container rebuilds.
       - media:/app/media
+      # Client files from WhatsApp — NOT under media/, which nginx serves publicly.
+      - whatsapp_media:/app/whatsapp_media
     expose:
       - "8000"
+
+  # WhatsApp gateway (Baileys). Pinned: 2.4.x requires a licence (all calls → 503).
+  # Internal only — no ports; the backend calls it and receives its webhooks.
+  evolution:
+    image: evoapicloud/evolution-api:v2.3.7
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SERVER_URL: http://evolution:8080
+      SERVER_DISABLE_MANAGER: "true"
+      SERVER_DISABLE_DOCS: "true"
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:-}
+      DATABASE_PROVIDER: postgresql
+      # Own schema in the main database: included in pg_dump backups, invisible to Alembic.
+      DATABASE_CONNECTION_URI: postgresql://${POSTGRES_USER:-espada}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-espada}?schema=evolution
+      DATABASE_CONNECTION_CLIENT_NAME: evolution
+      CACHE_REDIS_ENABLED: "false"
+      CACHE_LOCAL_ENABLED: "true"
+      DEL_INSTANCE: "false"
+      LANGUAGE: ru
+      CONFIG_SESSION_PHONE_CLIENT: Espada
+      QRCODE_LIMIT: "30"
+    volumes:
+      - evolution_instances:/evolution/instances
+    expose:
+      - "8080"
 
   mcp:
     build: ./mcp-server
@@ -79,3 +117,5 @@ services:
 volumes:
   pgdata:
   media:
+  whatsapp_media:
+  evolution_instances:
