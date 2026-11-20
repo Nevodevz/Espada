@@ -53,6 +53,8 @@ interface TransitionModalProps {
   /** Server error for the last attempt; the form stays open so the user can fix it. */
   error?: string | null;
   busy?: boolean;
+  /** Prefilled form values, e.g. reject_reason_id for «Минус — не выходит на связь». */
+  defaults?: Record<string, unknown>;
 }
 
 function initForm(kind: string, card: CardLike): Record<string, unknown> {
@@ -107,11 +109,12 @@ export function TransitionModal({
   onCancel,
   error,
   busy = false,
+  defaults,
 }: TransitionModalProps) {
   const kind = stageKind(stage);
   const closers = closerOptions(users, card.closer_id ?? card.closer?.id ?? null);
   const [comment, setComment] = useState("");
-  const [form, setForm] = useState<Record<string, unknown>>(() => initForm(kind, card));
+  const [form, setForm] = useState<Record<string, unknown>>(() => ({ ...initForm(kind, card), ...(defaults ?? {}) }));
 
   function set(key: string, val: unknown) {
     setForm((prev) => ({ ...prev, [key]: val }));

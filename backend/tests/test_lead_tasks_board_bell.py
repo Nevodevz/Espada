@@ -101,3 +101,12 @@ def test_no_task_bell_and_analytics(client, db, lead, staff, sales, stages):
     messages = [p["message"] for p in analytics.problems(db)]
     assert any("без задачи" in m for m in messages)
     assert any("просроченной задачей" in m for m in messages)
+
+
+def test_lead_detail_has_next_task_and_streak(client, db, lead, staff, sales):
+    done = add_task(db, lead, now() - timedelta(hours=2), staff)
+    done.status, done.result, done.completed_at = "done", "no_answer", now()
+    nxt = add_task(db, lead, now() + timedelta(hours=2), staff)
+    db.commit()
+    body = client.get(f"/api/leads/{lead.id}", headers=auth_headers(staff)).json()
+    assert body["next_task"]["id"] == nxt.id and body["no_answer_streak"] == 1

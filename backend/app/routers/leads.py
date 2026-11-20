@@ -822,8 +822,11 @@ def get_lead(lead_id: int, db: Session = Depends(get_db), _: User = Depends(get_
     open_meeting = scheduled_meeting_for(db, lead.id)
     from app.routers.whatsapp import lead_chat  # local import: whatsapp imports this module's neighbours
     wa_chat = lead_chat(db, lead)
+    nxt, streaks = task_extras(db, [lead.id])
     return LeadDetailOut(
         whatsapp_chat_id=wa_chat.id if wa_chat else None,
+        next_task=nxt.get(lead.id),
+        no_answer_streak=streaks.get(lead.id, 0),
         scheduled_meeting=ScheduledMeetingOut.model_validate(open_meeting) if open_meeting else None,
         **_lead_to_dict(lead),
         source=lead.source,
