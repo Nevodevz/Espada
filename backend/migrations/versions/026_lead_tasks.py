@@ -26,6 +26,13 @@ BISHKEK = timezone(timedelta(hours=6))
 REASON = "Не выходит на связь"
 
 
+def moved_due(now: datetime) -> datetime:
+    """Due time for a moved past-due task: 10:00 today, or in an hour if the deploy is later."""
+    local = now.astimezone(BISHKEK)
+    ten = local.replace(hour=10, minute=0, second=0, microsecond=0)
+    return max(ten, local + timedelta(hours=1))
+
+
 def upgrade() -> None:
     op.create_table(
         "lead_tasks",
@@ -55,7 +62,7 @@ def upgrade() -> None:
         bind.execute(sa.text("INSERT INTO reject_reasons (name, is_active) VALUES (:n, true)"), {"n": REASON})
 
     now = datetime.now(timezone.utc)
-    today_10 = datetime.now(BISHKEK).replace(hour=10, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+    moved_at = moved_due(now).astimezone(timezone.utc)
     rows = bind.execute(sa.text("""
         SELECT l.id, l.next_action_type, l.next_action_at, l.setter_id, l.closer_id, l.comment
         FROM leads l LEFT JOIN lead_stages s ON s.id = l.stage_id
@@ -78,7 +85,7 @@ def upgrade() -> None:
         text = action
         due = at
         if at < now:
-            due = today_10
+            due = moved_at
             note = f"перенесено из «следующего действия» от {at.astimezone(BISHKEK).strftime('%d.%m')}"
             text = f"{action} ({note})" if action else note
         bind.execute(tasks.insert().values(

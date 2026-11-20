@@ -46,6 +46,12 @@ def due_reminders(db: Session, user: User, now: datetime | None = None) -> list[
             out.append(_item(f"task_soon_{task.id}", "info", f"Через {SOON_MINUTES} минут: {label} — {_client(task)}",
                              f"В {stamp}", f"/leads/{task.lead_id}"))
 
+    if user.role == Role.admin or user.is_founder:
+        unassigned = db.query(LeadTask.id).filter(LeadTask.status == "open", LeadTask.assignee_id.is_(None)).count()
+        if unassigned:
+            out.append(_item("tasks_unassigned", "warning", f"Задачи без ответственного: {unassigned}",
+                             "Назначьте ответственного", "/tasks?assignee=none"))
+
     # Open leads with no open task: for admins all of them, else leads where the user is setter/closer.
     closed_stage_ids = [s.id for s in db.query(LeadStage.id).filter(LeadStage.kind.in_(("won", "lost")))]
     q = db.query(Lead.id).filter(Lead.status == LeadStatus.active)

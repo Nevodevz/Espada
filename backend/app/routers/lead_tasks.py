@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
-from app.models import Lead, LeadTask, Role, User
+from app.models import Lead, LeadStatus, LeadTask, Role, User
 from app.schemas import UserOut
 from app.services import lead_tasks as svc
 from app.services.whatsapp.access import can_use_whatsapp
@@ -32,6 +32,10 @@ class TaskComplete(BaseModel):
 
 class TaskReschedule(BaseModel):
     due_at: datetime
+
+
+class TaskAssign(BaseModel):
+    assignee_id: int
 
 
 class LeadTaskOut(BaseModel):
@@ -110,6 +114,12 @@ def _task_for_edit(db: Session, user: User, task_id: int) -> LeadTask:
     return task
 
 
+def _check_assignee(db: Session, assignee_id: int) -> None:
+    assignee = db.get(User, assignee_id)
+    if assignee is None or not assignee.is_active or not can_use_whatsapp(db, assignee):
+        raise HTTPException(422, "Ответственным может быть только сотрудник отдела продаж")
+
+
 def _query(db: Session):
     return db.query(LeadTask).options(joinedload(LeadTask.lead), joinedload(LeadTask.assignee))
 
@@ -130,11 +140,13 @@ def lead_tasks(lead_id: int, status: Literal["open", "all"] = "open",
 def create_task(lead_id: int, body: TaskCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _require_sales(db, user)
     lead = _lead(db, lead_id)
+    stage_kind = lead.stage.kind if lead.stage else "generic"
+    if lead.status != LeadStatus.active or stage_kind in ("won", "lost"):
+        # Closed/archived leads auto-cancel their tasks; a new one would just hang in «Мои задачи».
+        raise HTTPException(409, "Лид закрыт или в архиве — верните его в работу, чтобы ставить задачи")
     assignee_id = body.assignee_id or user.id
     if assignee_id != user.id:
-        assignee = db.get(User, assignee_id)
-        if assignee is None or not assignee.is_active or not can_use_whatsapp(db, assignee):
-            raise HTTPException(422, "Ответственным может быть только сотрудник отдела продаж")
+        _check_assignee(db, assignee_id)
     task = svc.create_task(db, lead, kind=body.kind, due_at=_aware(body.due_at), assignee_id=assignee_id,
                            created_by=user.id, comment=body.comment.strip())
     db.commit()
@@ -157,6 +169,16 @@ def reschedule(task_id: int, body: TaskReschedule, db: Session = Depends(get_db)
     new = svc.reschedule_task(db, task, due_at=_aware(body.due_at), user_id=user.id)
     db.commit()
     return _out(db, user, _query(db).filter(LeadTask.id == new.id).one())
+
+
+@router.post("/api/lead-tasks/{task_id}/assign", response_model=LeadTaskOut)
+def assign(task_id: int, body: TaskAssign, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Reassign — also how tasks without an assignee (left employee, migration) get an owner."""
+    task = _task_for_edit(db, user, task_id)
+    _check_assignee(db, body.assignee_id)
+    task.assignee_id = body.assignee_id
+    db.commit()
+    return _out(db, user, _query(db).filter(LeadTask.id == task.id).one())
 
 
 @router.post("/api/lead-tasks/{task_id}/cancel", response_model=LeadTaskOut)

@@ -276,16 +276,28 @@ export default function LeadDetailPage() {
         <Field label="Отрасль">{lead.industry}</Field>
         <Field label="Сотрудников">{lead.employees_count}</Field>
         <Field label="Создан">{fmtDate(lead.created_at)}</Field>
+        <Field label="Обновлён">{fmtDate(lead.updated_at)}</Field>
       </Fold>
 
       <Fold title={`Финансы и график оплат${lead.deal_amount > 0 ? ` · ${dealStatus.label}` : ""}`}>
         <Field label="Сумма сделки">{fmtMoney(lead.deal_amount)}</Field>
         <Field label="Оплачено">{fmtMoney(lead.paid_amount)}</Field>
         <Field label="Остаток">{fmtMoney(lead.remaining_amount)}</Field>
+        {lead.active_deal && (
+          <>
+            <Field label="Способ последней оплаты">{lead.active_deal.payment_method}</Field>
+            <Field label="Дата последней оплаты">{lead.active_deal.payment_date ? fmtDate(lead.active_deal.payment_date) : null}</Field>
+          </>
+        )}
         {lead.active_deal && lead.deal_status === "paid" && (
           <>
             <Field label="Комиссия сеттера">{fmtMoney(lead.active_deal.setter_commission)}</Field>
             <Field label="Комиссия клоузера">{fmtMoney(lead.active_deal.closer_commission)}</Field>
+            <Field label="Маржа">{(() => {
+              const d = lead.active_deal!;
+              const margin = d.paid_amount - d.setter_commission - d.closer_commission;
+              return <span style={{ color: margin >= 0 ? "var(--green)" : "var(--red)", fontWeight: 600 }}>{fmtMoney(margin)}</span>;
+            })()}</Field>
           </>
         )}
         <div style={{ marginTop: 10 }}>
@@ -318,7 +330,8 @@ export default function LeadDetailPage() {
       {linkedProject && (
         <Fold title="Проект в разработке">
           <div style={{ fontSize: 13 }}>
-            <b>{linkedProject.company}</b> · {linkedProject.sub_status || "Без подстатуса"}{" "}
+            <b>{linkedProject.company}</b> · {linkedProject.sub_status || "Без подстатуса"}
+            {linkedProject.bot_comment ? ` · ${linkedProject.bot_comment}` : ""}{" "}
             <Link href="/dept/dev">Открыть</Link>
           </div>
         </Fold>

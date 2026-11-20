@@ -54,9 +54,10 @@ def _window(query, at_col, id_col, cut: datetime | None, limit: int):
     ordered = (at_col.desc(), id_col.desc())
     if cut is None:
         return query.order_by(*ordered).limit(limit).all()
-    naive_cut = cut.replace(tzinfo=None)
-    older = query.filter(at_col < naive_cut).order_by(*ordered).limit(limit).all()
-    ties = query.filter(at_col >= naive_cut, at_col <= naive_cut).all()
+    # Aware UTC: PostgreSQL compares timestamptz correctly whatever the session TimeZone is
+    # (a naive value would be read in that zone); SQLite's binding ignores tzinfo.
+    older = query.filter(at_col < cut).order_by(*ordered).limit(limit).all()
+    ties = query.filter(at_col >= cut, at_col <= cut).all()
     return older + ties
 
 

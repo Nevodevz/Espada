@@ -5,7 +5,7 @@ import { Button } from "@/components/ui";
 import { useToast } from "@/context/ToastContext";
 import { leadTasksApi } from "@/lib/api";
 import { fmtDateTime, localInputToUtc, utcToLocalInput } from "@/lib/format";
-import { QUICK_DUE_LABELS, TASK_KIND_ICONS, TASK_KIND_LABELS, isOverdue, quickDue, type QuickDue } from "@/lib/leadTasks";
+import { QUICK_DUE_LABELS, TASK_KIND_ICONS, TASK_KIND_LABELS, isOverdue, quickDue, reloadAfterResult, type QuickDue } from "@/lib/leadTasks";
 import type { LeadTask } from "@/lib/types";
 
 type After =
@@ -28,8 +28,8 @@ function QuickTimes({ onPick }: { onPick: (iso: string) => void }) {
   );
 }
 
-function TaskRow({ task, onDone, onChanged }: {
-  task: LeadTask; onDone: (after: After | null) => void; onChanged: () => void;
+function TaskRow({ task, onDone }: {
+  task: LeadTask; onDone: (after: After | null) => void;
 }) {
   const toast = useToast();
   const [mode, setMode] = useState<"idle" | "connected" | "reschedule">("idle");
@@ -42,7 +42,6 @@ function TaskRow({ task, onDone, onChanged }: {
     try {
       const res = await action();
       onDone(after(res));
-      onChanged();
     } catch (e: unknown) {
       toast((e as Error).message || "Не удалось сохранить", "error");
     } finally { setBusy(false); }
@@ -96,7 +95,7 @@ function TaskRow({ task, onDone, onChanged }: {
 }
 
 /** Open tasks pinned above the feed, plus the AmoCRM-style follow-ups after a result. */
-export function LeadTasksPanel({ leadId, tasks, leadOpen, canWork, onChanged, onSuggestLost, onChangeStage, onPlanTask }: {
+export function LeadTasksPanel({ leadId, tasks, leadOpen, canWork, onChanged, onSuggestLost, onChangeStage, onPlanTask, deferReload = false }: {
   leadId: number;
   tasks: LeadTask[];
   /** Lead is active and not won/lost — only then «Нет задачи» matters. */
@@ -106,16 +105,35 @@ export function LeadTasksPanel({ leadId, tasks, leadOpen, canWork, onChanged, on
   onSuggestLost: () => void;
   onChangeStage: () => void;
   onPlanTask: () => void;
+  /** «Мои задачи»: completed tasks leave the list — keep the follow-up on screen until answered. */
+  deferReload?: boolean;
 }) {
   const toast = useToast();
-  const [after, setAfter] = useState<After | null>(null);
+  const [after, setAfterState] = useState<After | null>(null);
   const [pickTime, setPickTime] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [doneIds, setDoneIds] = useState<number[]>([]);
+
+  /** Close (or open) the follow-up; a reload postponed for it happens when it closes. */
+  function setAfter(next: After | null) {
+    setAfterState(next);
+    if (next === null && pending) { setPending(false); onChanged(); }
+  }
+
+  function handleDone(taskId: number, next: After | null) {
+    setDoneIds((ids) => [...ids, taskId]);
+    setAfterState(next);
+    if (reloadAfterResult(next, deferReload)) onChanged();
+    else setPending(true);
+  }
 
   async function createCallback(iso: string, kind: LeadTask["kind"]) {
     try {
       await leadTasksApi.create(leadId, { kind, due_at: iso, comment: "Перезвонить" });
       toast("Задача поставлена", "success");
-      setAfter(null); setPickTime(false);
+      setPickTime(false);
+      setAfterState(null);
+      setPending(false);
       onChanged();
     } catch (e: unknown) { toast((e as Error).message, "error"); }
   }
@@ -147,7 +165,7 @@ export function LeadTasksPanel({ leadId, tasks, leadOpen, canWork, onChanged, on
           <Button size="sm" variant="ghost" onClick={() => setAfter(null)}>✕</Button>
         </div>
       )}
-      {tasks.map((t) => <TaskRow key={t.id} task={t} onDone={setAfter} onChanged={onChanged} />)}
+      {tasks.filter((t) => !doneIds.includes(t.id)).map((t) => <TaskRow key={t.id} task={t} onDone={(next) => handleDone(t.id, next)} />)}
       {leadOpen && canWork && tasks.length === 0 && !after && (
         <div style={{ background: "var(--yellow-bg, #fff8e6)", border: "1px solid var(--yellow)", borderRadius: 8, padding: "8px 10px", marginBottom: 8, fontSize: 13, display: "flex", gap: 8, alignItems: "center" }}>
           ⚠️ Нет следующей задачи — поставьте

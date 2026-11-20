@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupMyTasks, isOverdue, quickDue } from "./leadTasks";
+import { groupMyTasks, isOverdue, quickDue, reloadAfterResult } from "./leadTasks";
 import type { LeadTask } from "./types";
 
 // Bishkek is UTC+6: 12:00 local = 06:00Z.
@@ -45,5 +45,14 @@ describe("isOverdue", () => {
     expect(isOverdue(t(1, "2026-11-20T05:59:00Z"), now)).toBe(true);
     expect(isOverdue(t(1, "2026-11-20T06:01:00Z"), now)).toBe(false);
     expect(isOverdue({ ...t(1, "2026-11-20T05:00:00Z"), status: "done" }, now)).toBe(false);
+  });
+});
+
+describe("reloadAfterResult", () => {
+  it("on «Мои задачи» waits until the follow-up offer is answered, otherwise reloads at once", () => {
+    expect(reloadAfterResult({ kind: "callback" }, true)).toBe(false);
+    expect(reloadAfterResult({ kind: "next" }, true)).toBe(false);
+    expect(reloadAfterResult(null, true)).toBe(true);
+    expect(reloadAfterResult({ kind: "callback" }, false)).toBe(true);
   });
 });

@@ -142,3 +142,34 @@ def test_whatsapp_ignore_cancels_tasks_of_auto_lead(client, db, lead, staff, sal
     db.expire_all()
     assert db.get(type(lead), lead.id).status == LeadStatus.archived
     assert db.query(LeadTask).filter_by(lead_id=lead.id).one().status == "canceled"
+
+
+def test_assign_unassigned_task(client, db, lead, staff, admin, sales):
+    t = LeadTask(lead_id=lead.id, kind="call", due_at=datetime.now(timezone.utc), assignee_id=None, status="open")
+    db.add(t)
+    db.commit()
+    r = client.post(f"/api/lead-tasks/{t.id}/assign", json={"assignee_id": staff.id}, headers=auth_headers(admin))
+    assert r.status_code == 200 and r.json()["assignee"]["id"] == staff.id
+
+
+def test_assign_requires_sales_assignee(client, db, lead, staff, outsider, admin, sales):
+    tid = create(client, staff, lead.id).json()["id"]
+    assert client.post(f"/api/lead-tasks/{tid}/assign", json={"assignee_id": outsider.id},
+                       headers=auth_headers(admin)).status_code == 422
+
+
+def test_unassigned_tasks_in_manager_bell(client, db, lead, admin, sales):
+    db.add(LeadTask(lead_id=lead.id, kind="call", due_at=datetime.now(timezone.utc) - timedelta(days=1),
+                    assignee_id=None, status="open"))
+    db.commit()
+    items = {n["id"]: n for n in client.get("/api/notifications", headers=auth_headers(admin)).json()["items"]}
+    assert "tasks_unassigned" in items and items["tasks_unassigned"]["link"] == "/tasks?assignee=none"
+
+
+def test_no_tasks_on_closed_or_archived_lead(client, db, lead, staff, stages, sales):
+    lead.stage_id = stages["Минус"].id
+    db.commit()
+    assert create(client, staff, lead.id).status_code == 409
+    lead.stage_id, lead.status = stages["Созвон"].id, LeadStatus.archived
+    db.commit()
+    assert create(client, staff, lead.id).status_code == 409

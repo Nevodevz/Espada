@@ -65,3 +65,11 @@ export function groupMyTasks<T extends Pick<LeadTask, "status" | "due_at">>(task
   }
   return { overdue, today, later };
 }
+
+/**
+ * After a task result: reload the list now, unless the page drops completed tasks (deferReload,
+ * «Мои задачи») and a follow-up offer is open — reloading would unmount it before it is answered.
+ */
+export function reloadAfterResult(after: { kind: string } | null, deferReload: boolean): boolean {
+  return !deferReload || after === null;
+}

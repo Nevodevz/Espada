@@ -627,6 +627,8 @@ export const leadTasksApi = {
   reschedule: (id: number, dueAt: string) =>
     request<import("./types").LeadTask>(`/lead-tasks/${id}/reschedule`, { method: "POST", body: JSON.stringify({ due_at: dueAt }) }),
   cancel: (id: number) => request<import("./types").LeadTask>(`/lead-tasks/${id}/cancel`, { method: "POST" }),
+  assign: (id: number, assigneeId: number) =>
+    request<import("./types").LeadTask>(`/lead-tasks/${id}/assign`, { method: "POST", body: JSON.stringify({ assignee_id: assigneeId }) }),
   mine: (scope: "overdue" | "today" | "upcoming" | "all" = "all", assignee: string = "me") =>
     request<import("./types").LeadTask[]>(`/lead-tasks?scope=${scope}&assignee=${encodeURIComponent(assignee)}`),
 };
