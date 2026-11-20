@@ -5,7 +5,7 @@ Field names come from the v2.3.7 sources (docs were unreachable): auth header
 lower-case dot form. 2.4.x requires a licence — keep the image pinned to 2.3.7.
 """
 import base64
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
@@ -154,6 +154,36 @@ class EvolutionProvider:
         return self._result(self._call(
             "POST", f"/message/sendText/{self.instance}", json={"number": phone, "text": text},
         ))
+
+    def recent_messages(self, since: datetime, limit: int = 2000) -> list[InboundMessage]:
+        """Messages Evolution stored since `since` (oldest first) — for catching up missed webhooks.
+
+        `findMessages` records have the same shape as messages.upsert data, minus base64 media.
+        """
+        until = datetime.now(timezone.utc) + timedelta(minutes=5)
+        where = {"messageTimestamp": {"gte": since.astimezone(timezone.utc).isoformat(), "lte": until.isoformat()}}
+        out: list[InboundMessage] = []
+        page, pages, fetched = 1, 1, 0
+        while page <= pages and fetched < limit:
+            data = self._call("POST", f"/chat/findMessages/{self.instance}",
+                              json={"where": where, "page": page, "offset": 100}) or {}
+            block = data.get("messages") or {}
+            records = block.get("records") or []
+            pages = int(block.get("pages") or 1)
+            fetched += len(records)
+            for record in records:
+                msg = _parse_upsert(record) if isinstance(record, dict) else None
+                if msg:
+                    out.append(msg)
+            if not records:
+                break
+            page += 1
+        return sorted(out, key=lambda m: m.sent_at)
+
+    def media_base64(self, external_id: str) -> str | None:
+        data = self._call("POST", f"/chat/getBase64FromMediaMessage/{self.instance}",
+                          json={"message": {"key": {"id": external_id}}}) or {}
+        return data.get("base64") or None
 
     def send_media(self, phone: str, data: bytes, mime: str, file_name: str, caption: str) -> SendResult:
         return self._result(self._call("POST", f"/message/sendMedia/{self.instance}", json={

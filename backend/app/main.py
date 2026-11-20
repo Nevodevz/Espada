@@ -33,8 +33,10 @@ async def lifespan(app: FastAPI):
     from app.services.whatsapp.runtime import whatsapp_configured
     if whatsapp_configured():
         from app.core.database import SessionLocal
-        from app.services.whatsapp.runtime import poll_state_forever
-        poller = asyncio.create_task(poll_state_forever(SessionLocal))
+        from app.services.whatsapp.runtime import catch_up_forever, poll_state_forever
+        poller = asyncio.gather(
+            poll_state_forever(SessionLocal), catch_up_forever(SessionLocal), return_exceptions=True,
+        )
     yield
     if poller:
         poller.cancel()

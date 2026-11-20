@@ -2,9 +2,9 @@
 import hmac
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -18,6 +18,7 @@ from app.core.deps import get_current_user, require_admin
 from app.models import Lead, LeadStatus, User, WhatsAppChat, WhatsAppMessage, WhatsAppState
 from app.schemas import UserOut
 from app.services.whatsapp.access import can_use_whatsapp
+from app.services.whatsapp.catchup import catch_up
 from app.services.whatsapp.evolution import mediatype_for, parse_webhook
 from app.services.whatsapp.inbound import create_lead_for_chat, get_or_create_chat, handle_events, set_state
 from app.services.whatsapp.media import media_abspath, save_media
@@ -125,6 +126,21 @@ def connect(
     set_state(db, result["state"])
     db.commit()
     return ConnectOut(**result)
+
+
+@router.post("/catch-up")
+def manual_catch_up(
+    hours: int = Query(24, ge=1, le=24 * 7),
+    db: Session = Depends(get_db),
+    provider: WhatsAppProvider | None = Depends(get_provider),
+    _: User = Depends(require_admin),
+):
+    """Pull messages whose webhooks were missed (e.g. after a long outage)."""
+    provider = _require_provider(provider)
+    since = datetime.now(timezone.utc) - timedelta(hours=hours)
+    added = _provider_call(catch_up, db, provider, since)
+    db.commit()
+    return {"added": added}
 
 
 @router.post("/logout")

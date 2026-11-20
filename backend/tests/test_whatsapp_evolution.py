@@ -162,3 +162,38 @@ def test_ensure_instance_updates_webhook_when_present():
 
     provider(handler).ensure_instance("http://backend:8000/api/whatsapp/webhook/s")
     assert calls[-1] == ("POST", "/webhook/set/espada-sales")
+
+
+def _record(i, jid="36722104639620@lid", alt="996703588048@s.whatsapp.net", kind="conversation"):
+    message = {"conversation": f"m{i}"} if kind == "conversation" else {"imageMessage": {"mimetype": "image/jpeg", "caption": ""}}
+    key = {"id": f"ID{i}", "fromMe": False, "remoteJid": jid}
+    if alt:
+        key["remoteJidAlt"] = alt
+    return {"key": key, "pushName": "Бектур", "messageType": kind, "message": message, "messageTimestamp": 1795165000 + i}
+
+
+def test_recent_messages_pages_through_find_messages():
+    since = datetime(2026, 11, 20, 8, 0, tzinfo=timezone.utc)
+    bodies = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        bodies.append(body)
+        page = body["page"]
+        records = [_record(1), _record(2)] if page == 1 else [_record(3), _record(4, jid="120363@g.us", alt=None)]
+        return httpx.Response(200, json={"messages": {"total": 4, "pages": 2, "currentPage": page, "records": records}})
+
+    msgs = provider(handler).recent_messages(since)
+    assert [m.external_id for m in msgs] == ["ID1", "ID2", "ID3"]          # group record dropped
+    assert all(m.phone == "996703588048" for m in msgs)
+    assert bodies[0]["where"]["messageTimestamp"]["gte"].startswith("2026-11-20T08:00:00")
+    assert [b["page"] for b in bodies] == [1, 2]
+
+
+def test_media_base64_fetch():
+    def handler(request):
+        assert request.url.path == "/chat/getBase64FromMediaMessage/espada-sales"
+        assert json.loads(request.content) == {"message": {"key": {"id": "ID9"}}}
+        return httpx.Response(201, json={"base64": "aGVsbG8=", "mimetype": "image/jpeg"})
+
+    assert provider(handler).media_base64("ID9") == "aGVsbG8="
