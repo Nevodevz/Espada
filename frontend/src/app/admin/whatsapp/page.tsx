@@ -44,6 +44,19 @@ export default function WhatsAppAdminPage() {
   }, [qr, status?.state, loadStatus]);
   useEffect(() => { if (status?.state === "open") setQr(null); }, [status?.state]);
 
+  // WhatsApp rotates the QR roughly every 20 s: fetch a fresh one while it is on screen.
+  const showingQr = !!qr;
+  useEffect(() => {
+    if (!showingQr || status?.state === "open") return;
+    const timer = setInterval(async () => {
+      try {
+        const next = await whatsappApi.connect();
+        setQr(next.state === "open" ? null : next);
+      } catch { /* keep the current QR; the next tick retries */ }
+    }, 15_000);
+    return () => clearInterval(timer);
+  }, [showingQr, status?.state]);
+
   async function connect() {
     setBusy(true);
     try {
