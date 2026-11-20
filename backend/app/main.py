@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -15,7 +16,7 @@ from app.middleware import last_seen_middleware
 from app.routers import (
     auth, users, projects, tasks, departments, boards, sales, marketing,
     search, notifications, meetings, bug_reports, leads, finance, payroll, analytics,
-    api_keys, lab_projects, lead_board, calendar as calendar_router,
+    api_keys, lab_projects, lead_board, whatsapp, calendar as calendar_router,
 )
 from app.routers import settings as settings_router
 
@@ -28,7 +29,14 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     # Media lives on a persistent volume; create it so the first upload succeeds.
     Path(settings.MEDIA_ROOT).mkdir(parents=True, exist_ok=True)
+    poller = None
+    if settings.EVOLUTION_URL:
+        from app.core.database import SessionLocal
+        from app.services.whatsapp.runtime import poll_state_forever
+        poller = asyncio.create_task(poll_state_forever(SessionLocal))
     yield
+    if poller:
+        poller.cancel()
 
 
 app = FastAPI(title="Espada API", version="2.1.0", lifespan=lifespan)
@@ -74,6 +82,7 @@ app.include_router(analytics.router)
 app.include_router(api_keys.router)
 app.include_router(lab_projects.router)
 app.include_router(calendar_router.router)
+app.include_router(whatsapp.router)
 
 # Uploaded media (avatars). In production nginx serves this path directly and
 # never reaches the app; the mount keeps local development working.
