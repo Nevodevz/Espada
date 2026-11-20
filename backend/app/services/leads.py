@@ -86,6 +86,10 @@ def change_lead_stage(
         _handle_won_stage(db, lead, changed_by, extra_data)
     elif kind == "lost":
         _handle_lost_stage(db, lead, changed_by, extra_data)
+    if kind in ("won", "lost"):
+        # A closed lead has nothing left to do; local import avoids a cycle (lead_tasks → leads).
+        from app.services.lead_tasks import cancel_open_tasks
+        cancel_open_tasks(db, lead.id)
 
     entry = LeadStageHistory(
         lead_id=lead.id,

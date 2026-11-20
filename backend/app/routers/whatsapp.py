@@ -17,6 +17,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_user, require_admin
 from app.models import Lead, LeadStatus, User, WhatsAppChat, WhatsAppMessage, WhatsAppState
 from app.schemas import UserOut
+from app.services.lead_tasks import cancel_open_tasks
 from app.services.whatsapp.access import can_use_whatsapp
 from app.services.whatsapp.catchup import catch_up
 from app.services.whatsapp.evolution import mediatype_for, parse_webhook
@@ -429,6 +430,7 @@ def ignore_chat(chat_id: int, db: Session = Depends(get_db), _: User = Depends(r
         lead = db.get(Lead, chat.lead_id)
         if lead:
             lead.status = LeadStatus.archived
+            cancel_open_tasks(db, lead.id)
     db.commit()
     return ChatOut.model_validate(chat)
 

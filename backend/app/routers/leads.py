@@ -943,6 +943,8 @@ def archive_lead(
     lead = _load_lead(db, lead_id)
     lead.status = LeadStatus.archived
     lead.updated_at = datetime.now(timezone.utc)
+    from app.services.lead_tasks import cancel_open_tasks
+    cancel_open_tasks(db, lead.id)
     db.commit()
     fresh = _eager_lead(db).filter(Lead.id == lead_id).first()
     return _lead_out(db, fresh, deal_service.get_deal(db, lead_id))
