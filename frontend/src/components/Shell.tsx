@@ -20,6 +20,7 @@ const FINANCE_SLUG = "finance";
 const SALES_SUBNAV = [
   { href: "/leads",    icon: "contacts",      label: "Лиды и воронка" },
   { href: "/leads/board", icon: "view_kanban", label: "Доска" },
+  { href: "/tasks", icon: "task_alt", label: "Мои задачи" },
   { href: "/dept/sales?meetings=1", icon: "handshake", label: "Встречи" },
   { href: "/dept/sales", icon: "bar_chart",   label: "Дневник" },
 ];
@@ -71,6 +72,9 @@ export function Shell({ children, title }: { children: React.ReactNode; title?: 
       // No unread indicator for «Баги» — the bell handles real notifications.
     }
   }, [user]);
+
+  // Overdue lead tasks come with the bell (task_overdue_* items) — no extra request.
+  const overdueTasks = (notifs?.items ?? []).filter((n: { id: string }) => n.id.startsWith("task_overdue_")).length;
 
   // Auto-open collapsible sections when on sub-routes
   useEffect(() => {
@@ -170,7 +174,10 @@ export function Shell({ children, title }: { children: React.ReactNode; title?: 
                     {SALES_SUBNAV.map((item) => (
                       <Link key={item.href} href={item.href} className={`nav-link nav-sub-link ${(item.href === "/leads" ? pathname.startsWith("/leads") && !pathname.startsWith("/leads/board") : pathname.startsWith(item.href)) ? "active" : ""}`}>
                         <span className="material-symbols-outlined nav-ico">{item.icon}</span>
-                        <span>{item.label}</span>
+                        <span style={{ flex: 1 }}>{item.label}</span>
+                        {item.href === "/tasks" && overdueTasks > 0 && (
+                          <span aria-label={`Просрочено задач: ${overdueTasks}`} style={{ borderRadius: 9, padding: "0 6px", fontSize: 11, background: "var(--red)", color: "#fff" }}>{overdueTasks}</span>
+                        )}
                       </Link>
                     ))}
                   </div>

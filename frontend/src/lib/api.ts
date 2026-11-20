@@ -312,7 +312,7 @@ export interface LeadQuery {
 
 /** Board filters: the list filters plus the board's quick toggles. */
 export interface BoardQuery extends LeadQuery {
-  mine?: boolean; unassigned?: boolean; show_closed?: boolean;
+  mine?: boolean; unassigned?: boolean; show_closed?: boolean; overdue?: boolean; no_task?: boolean;
 }
 
 function leadQueryString(f?: LeadQuery): string {
@@ -333,7 +333,7 @@ function leadQueryString(f?: LeadQuery): string {
 /** List filters + board toggles. Uses toString(), not `.size` (missing in Safari < 17). */
 export function boardQueryString(query?: BoardQuery): string {
   const p = new URLSearchParams(leadQueryString(query).replace(/^\?/, ""));
-  for (const key of ["mine", "unassigned", "show_closed"] as const) if (query?.[key]) p.set(key, "true");
+  for (const key of ["mine", "unassigned", "show_closed", "overdue", "no_task"] as const) if (query?.[key]) p.set(key, "true");
   const qs = p.toString();
   return qs ? "?" + qs : "";
 }

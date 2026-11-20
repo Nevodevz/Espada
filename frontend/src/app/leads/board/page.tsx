@@ -21,6 +21,8 @@ const POLL_MS = 30_000;
 const TOGGLES = [
   { key: "mine", label: "Мои лиды" },
   { key: "unassigned", label: "Неразобранные" },
+  { key: "overdue", label: "Просрочено" },
+  { key: "no_task", label: "Без задачи" },
   { key: "show_closed", label: "Показать закрытые" },
 ] as const;
 type ToggleKey = (typeof TOGGLES)[number]["key"];
@@ -37,6 +39,8 @@ function BoardPage() {
     mine: searchParams.get("mine") === "true",
     unassigned: searchParams.get("unassigned") === "true",
     show_closed: searchParams.get("show_closed") === "true",
+    overdue: searchParams.get("overdue") === "true",
+    no_task: searchParams.get("no_task") === "true",
   }));
   const [search, setSearch] = useState(filters.search);
   const [data, setData] = useState<LeadBoardData | null>(null);

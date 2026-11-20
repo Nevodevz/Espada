@@ -2,7 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { Button, Card } from "@/components/ui";
-import { fmtDate, fmtMoneyShort } from "@/lib/format";
+import { fmtDate, fmtDateTime, fmtMoneyShort } from "@/lib/format";
+import { TASK_KIND_ICONS, TASK_KIND_LABELS } from "@/lib/leadTasks";
 import type { Lead, LeadListResponse, LeadStage } from "@/lib/types";
 import { DEAL_STATUS } from "@/lib/types";
 
@@ -133,15 +134,15 @@ export function LeadListView({
                     {fmtMoneyShort(lead.remaining_amount)}
                   </td>
                   <td style={{ padding: "10px 12px" }}>
-                    {lead.next_action_type ? (
-                      <div>
-                        <div style={{ fontSize: 12, fontWeight: 500 }}>{lead.next_action_type}</div>
-                        {lead.next_action_at && (
-                          <div style={{ fontSize: 11, color: "var(--text3)" }}>{fmtDate(lead.next_action_at)}</div>
-                        )}
+                    {lead.next_task ? (
+                      <div style={{ fontSize: 12, color: lead.next_task.overdue ? "var(--red)" : "var(--text1)" }}>
+                        {TASK_KIND_ICONS[lead.next_task.kind]} {TASK_KIND_LABELS[lead.next_task.kind]}
+                        <div style={{ fontSize: 11, color: lead.next_task.overdue ? "var(--red)" : "var(--text3)" }}>
+                          {fmtDateTime(lead.next_task.due_at)}{lead.next_task.overdue ? " · просрочено" : ""}
+                        </div>
                       </div>
                     ) : (
-                      <span style={{ fontSize: 11, color: "var(--red)", fontStyle: "italic" }}>Не задан</span>
+                      <span style={{ fontSize: 11, color: "var(--yellow)", fontStyle: "italic" }}>Нет задачи</span>
                     )}
                   </td>
                 </tr>

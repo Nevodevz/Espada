@@ -10,7 +10,8 @@ import {
 import { Button } from "@/components/ui";
 import { StageActionMenu } from "./StageActionMenu";
 import { cardsForStage, cardsWithoutColumn, splitStages } from "./lead-board-layout";
-import { fmtMoneyShort } from "@/lib/format";
+import { fmtDateTime, fmtMoneyShort } from "@/lib/format";
+import { TASK_KIND_LABELS } from "@/lib/leadTasks";
 import type { LeadBoardCard, LeadBoardData, LeadStage } from "@/lib/types";
 
 interface Props {
@@ -26,6 +27,23 @@ interface Props {
 
 const TakeContext = createContext<Props["onTake"]>(undefined);
 
+function TaskBadge({ card }: { card: LeadBoardCard }) {
+  const closed = card.stage?.kind === "won" || card.stage?.kind === "lost";
+  const streak = card.no_answer_streak ?? 0;
+  return (
+    <div className="lead-board-meta" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      {card.next_task ? (
+        <span style={{ color: card.next_task.overdue ? "var(--red)" : "var(--text2)", fontWeight: card.next_task.overdue ? 600 : 400 }}>
+          ⏰ {TASK_KIND_LABELS[card.next_task.kind]} · {fmtDateTime(card.next_task.due_at)}
+        </span>
+      ) : !closed ? (
+        <span style={{ color: "var(--yellow)" }}>Нет задачи</span>
+      ) : null}
+      {streak > 0 && <span style={{ color: "var(--red)" }} title="Недозвонов подряд">📵×{streak}</span>}
+    </div>
+  );
+}
+
 function CardContent({ card }: { card: LeadBoardCard }) {
   return <>
     <div className="lead-board-title-row">
@@ -39,6 +57,7 @@ function CardContent({ card }: { card: LeadBoardCard }) {
     {card.company_name && <div className="lead-board-company">{card.company_name}</div>}
     {card.service && <div className="lead-board-meta">{card.service.name}</div>}
     {card.deal_amount > 0 && <div className="lead-board-money">{fmtMoneyShort(card.deal_amount)}</div>}
+    <TaskBadge card={card} />
     {(card.setter || card.closer) && <div className="lead-board-meta">
       {card.setter && <div>Сеттер: {card.setter.name}</div>}
       {card.closer && <div>Клоузер: {card.closer.name}</div>}
