@@ -233,6 +233,12 @@ export function Shell({ children, title }: { children: React.ReactNode; title?: 
                   <span>Настройки</span>
                 </Link>
               )}
+              {isAdmin && (
+                <Link href="/admin/whatsapp" className={`nav-link ${pathname.startsWith("/admin/whatsapp") ? "active" : ""}`}>
+                  <span className="material-symbols-outlined nav-ico">chat</span>
+                  <span>WhatsApp</span>
+                </Link>
+              )}
               {adminDepts.map((d) => (
                 <Link key={d.id} href={`/dept/${d.slug}`} className={`nav-link ${pathname === `/dept/${d.slug}` ? "active" : ""}`}>
                   <span className="material-symbols-outlined nav-ico">{d.icon}</span>

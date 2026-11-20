@@ -17,3 +17,4 @@ nginx/certs/*
 media/
 backend/media/
 .pytest_cache/
+backend/whatsapp_media/

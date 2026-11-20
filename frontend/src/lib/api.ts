@@ -565,3 +565,48 @@ export const labProjectApi = {
   removeMember: (id: number, user_id: number) =>
     request<import("./types").LabProject>(`/lab-projects/${id}/members/${user_id}`, { method: "DELETE" }),
 };
+
+
+// ── WhatsApp ───────────────────────────────────────────────────
+async function whatsappForm<T>(path: string, form: FormData): Promise<T> {
+  const token = getToken();
+  const res = await fetch(`/api${path}`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Ошибка отправки" }));
+    throw new Error(err.detail || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export const whatsappApi = {
+  access: () => request<{ can_use: boolean }>("/whatsapp/access"),
+  status: () => request<import("./types").WhatsAppStatus>("/whatsapp/status"),
+  connect: () => request<import("./types").WhatsAppConnect>("/whatsapp/connect", { method: "POST" }),
+  logout: () => request<{ state: string }>("/whatsapp/logout", { method: "POST" }),
+  messages: (leadId: number, afterId?: number) =>
+    request<import("./types").WhatsAppThread>(`/whatsapp/leads/${leadId}/messages${afterId ? `?after_id=${afterId}` : ""}`),
+  sendText: (leadId: number, text: string) =>
+    request<import("./types").WhatsAppMessage>(`/whatsapp/leads/${leadId}/messages`, { method: "POST", body: JSON.stringify({ text }) }),
+  sendMedia: (leadId: number, file: File, caption: string) => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("caption", caption);
+    return whatsappForm<import("./types").WhatsAppMessage>(`/whatsapp/leads/${leadId}/media`, form);
+  },
+  /** Client file as an object URL (auth header required, so no plain <img src>). Caller revokes it. */
+  mediaUrl: async (messageId: number): Promise<string> => {
+    const token = getToken();
+    const res = await fetch(`/api/whatsapp/media/${messageId}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!res.ok) throw new Error("Файл недоступен");
+    return URL.createObjectURL(await res.blob());
+  },
+  take: (leadId: number) => request<{ lead_id: number; setter_id: number }>(`/whatsapp/leads/${leadId}/take`, { method: "POST" }),
+  ignore: (chatId: number) => request<import("./types").WhatsAppChat>(`/whatsapp/chats/${chatId}/ignore`, { method: "POST" }),
+  unignore: (chatId: number) => request<import("./types").WhatsAppChat>(`/whatsapp/chats/${chatId}/unignore`, { method: "POST" }),
+  makeLead: (chatId: number) => request<import("./types").WhatsAppChat>(`/whatsapp/chats/${chatId}/make-lead`, { method: "POST" }),
+  otherChats: () => request<import("./types").WhatsAppChat[]>("/whatsapp/chats/other"),
+};

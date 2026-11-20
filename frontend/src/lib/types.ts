@@ -699,6 +699,8 @@ export interface ScheduledMeeting {
 
 export interface LeadBoardCard extends Lead {
   scheduled_meeting: ScheduledMeeting | null;
+  /** Unread WhatsApp messages from this client. */
+  whatsapp_unread: number;
 }
 
 /** Board columns are funnel stages; won/lost stages are drop zones. */
@@ -759,6 +761,8 @@ export interface LeadFile {
 export interface LeadDetail extends Lead {
   /** Open meeting — re-entering «Встреча» reschedules it. */
   scheduled_meeting: ScheduledMeeting | null;
+  /** Chat with this client, if any (null when nobody has written yet). */
+  whatsapp_chat_id: number | null;
   stage_history: LeadStageHistory[];
   activities: LeadActivity[];
   meetings: {
@@ -1046,3 +1050,47 @@ export const CALENDAR_VIEW_OPTIONS: { value: CalendarViewMode; label: string; ic
   { value: "month",  label: "Месяц",      icon: "calendar_view_month" },
   { value: "agenda", label: "Расписание", icon: "view_agenda" },
 ];
+
+
+// ── WhatsApp ───────────────────────────────────────────────────
+export interface WhatsAppChat {
+  id: number;
+  phone: string;
+  push_name: string;
+  lead_id: number | null;
+  is_ignored: boolean;
+  unread_count: number;
+  last_message_at: string | null;
+}
+
+export interface WhatsAppMessage {
+  id: number;
+  direction: "in" | "out";
+  kind: "text" | "image" | "document" | "audio" | "video" | "other";
+  body: string;
+  status: "pending" | "sent" | "delivered" | "read" | "failed" | "received";
+  error: string;
+  sent_at: string;
+  /** null for client messages and for messages typed on the phone itself. */
+  sender: User | null;
+  has_media: boolean;
+  media_name: string;
+  media_mime: string;
+}
+
+export interface WhatsAppThread {
+  chat: WhatsAppChat | null;
+  messages: WhatsAppMessage[];
+}
+
+export interface WhatsAppStatus {
+  configured: boolean;
+  state: string;
+  updated_at: string | null;
+}
+
+export interface WhatsAppConnect {
+  state: string;
+  qr_base64: string | null;
+  pairing_code: string | null;
+}

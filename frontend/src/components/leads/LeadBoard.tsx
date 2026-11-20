@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { createContext, useContext, useState } from "react";
 import Link from "next/link";
 import {
   DndContext, DragOverlay, PointerSensor, KeyboardSensor, useSensor, useSensors,
@@ -20,11 +20,22 @@ interface Props {
   onDropCard: (card: LeadBoardCard, stage: LeadStage) => void;
   /** «Показать закрытые»: won/lost stages become regular columns with their cards. */
   showClosed?: boolean;
+  /** «Взять себе» on a card without a setter (shown only when provided). */
+  onTake?: (card: LeadBoardCard) => void;
 }
+
+const TakeContext = createContext<Props["onTake"]>(undefined);
 
 function CardContent({ card }: { card: LeadBoardCard }) {
   return <>
-    <Link href={`/leads/${card.id}`} className="lead-board-title">{card.client_name || "Лид без имени"}</Link>
+    <div className="lead-board-title-row">
+      <Link href={`/leads/${card.id}`} className="lead-board-title">{card.client_name || "Лид без имени"}</Link>
+      {card.whatsapp_unread > 0 && (
+        <span className="lead-board-unread" title="Непрочитанные сообщения WhatsApp" aria-label={`Непрочитанных WhatsApp: ${card.whatsapp_unread}`}>
+          💬 {card.whatsapp_unread}
+        </span>
+      )}
+    </div>
     {card.company_name && <div className="lead-board-company">{card.company_name}</div>}
     {card.service && <div className="lead-board-meta">{card.service.name}</div>}
     {card.deal_amount > 0 && <div className="lead-board-money">{fmtMoneyShort(card.deal_amount)}</div>}
@@ -38,6 +49,7 @@ function CardContent({ card }: { card: LeadBoardCard }) {
 function LeadCard({ card, stages, disabled, onDropCard }: {
   card: LeadBoardCard; stages: LeadStage[]; disabled: boolean; onDropCard: Props["onDropCard"];
 }) {
+  const onTake = useContext(TakeContext);
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, isDragging } = useDraggable({
     id: `lead-${card.id}`, disabled, data: { leadId: card.id },
   });
@@ -51,6 +63,9 @@ function LeadCard({ card, stages, disabled, onDropCard }: {
         label={`Перевести лид «${card.client_name}»`} onSelect={(stage) => onDropCard(card, stage)} />
     </div>
     <CardContent card={card} />
+    {onTake && !card.setter_id && (
+      <Button size="sm" variant="ghost" disabled={disabled} onClick={() => onTake(card)} style={{ marginTop: 8 }}>Взять себе</Button>
+    )}
   </article>;
 }
 
@@ -97,7 +112,7 @@ function DropZone({ stage, count, disabled }: { stage: LeadStage; count: number;
   </div>;
 }
 
-export function LeadBoard({ data, disabled, onDropCard, showClosed = false }: Props) {
+export function LeadBoard({ data, disabled, onDropCard, showClosed = false, onTake }: Props) {
   const [activeCard, setActiveCard] = useState<LeadBoardCard | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 7 } }), useSensor(KeyboardSensor));
   const split = splitStages(data.stages);
@@ -116,7 +131,7 @@ export function LeadBoard({ data, disabled, onDropCard, showClosed = false }: Pr
     if (stage) onDropCard(card, stage);
   }
 
-  return <>
+  return <TakeContext.Provider value={onTake}>
     <div className="lead-board-toolbar"><span>Лидов на доске: {data.leads.length}</span></div>
     <DndContext sensors={sensors} collisionDetection={collisionDetection} onDragEnd={onDragEnd}
       onDragCancel={() => setActiveCard(null)}
@@ -150,6 +165,9 @@ export function LeadBoard({ data, disabled, onDropCard, showClosed = false }: Pr
       .lead-board-handle { display:flex; justify-content:center; align-items:center; background:none; border:0; color:var(--text3); padding:2px; border-radius:4px; cursor:grab; touch-action:none; }
       .lead-board-handle .material-symbols-outlined { font-size:18px; }
       .lead-board-handle:focus-visible { outline:2px solid var(--primary); }
+      .lead-board-title-row { display:flex; align-items:flex-start; gap:8px; }
+      .lead-board-title-row .lead-board-title { flex:1; }
+      .lead-board-unread { flex-shrink:0; border-radius:10px; padding:1px 7px; background:var(--green); color:#fff; font-size:11px; font-weight:600; }
       .lead-board-title { display:block; color:var(--text); font-size:14px; font-weight:600; text-decoration:none; overflow-wrap:anywhere; }
       .lead-board-title:hover { color:var(--primary); }
       .lead-board-company { margin-top:4px; color:var(--text2); font-size:12px; overflow-wrap:anywhere; }
@@ -162,5 +180,5 @@ export function LeadBoard({ data, disabled, onDropCard, showClosed = false }: Pr
       .lead-board-zone-over { background:var(--bg3); }
       @media (max-width:768px) { .lead-board-column { width:275px; } }
     `}</style>
-  </>;
+  </TakeContext.Provider>;
 }

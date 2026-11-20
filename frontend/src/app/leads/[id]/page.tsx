@@ -8,7 +8,8 @@ import { Button, ConfirmModal } from "@/components/ui";
 import { TransitionModal, stageKind, STAGE_ACTION_LABELS } from "@/components/TransitionModal";
 import { useApp } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";
-import { leadApi, settingsApi, api } from "@/lib/api";
+import { leadApi, settingsApi, api, whatsappApi } from "@/lib/api";
+import { LeadWhatsAppChat } from "@/components/whatsapp/LeadWhatsAppChat";
 import { closerOptions } from "@/lib/roles";
 import { PaymentScheduleSection } from "@/components/leads/PaymentSchedule";
 import {
@@ -21,6 +22,7 @@ import type {
   LeadActivity, LeadFile, Project, RejectReason,
 } from "@/lib/types";
 import { ACTIVITY_TYPES, DEAL_STATUS, FILE_TYPES } from "@/lib/types";
+import type { WhatsAppChat } from "@/lib/types";
 
 // ── utils ────────────────────────────────────────────────────────
 function daysSince(iso: string | null) {
@@ -496,6 +498,11 @@ export default function LeadDetailPage() {
   const [fileModal, setFileModal] = useState(false);
   const [archiveConfirm, setArchiveConfirm] = useState(false);
   const [deleteFileId, setDeleteFileId] = useState<number | null>(null);
+  const [waAccess, setWaAccess] = useState(false);
+  const [waChat, setWaChat] = useState<WhatsAppChat | null>(null);
+  const [ignoreConfirm, setIgnoreConfirm] = useState(false);
+
+  useEffect(() => { whatsappApi.access().then((r) => setWaAccess(r.can_use)).catch(() => {}); }, []);
 
   const loadSchedule = useCallback(async () => {
     if (!id) return;
@@ -660,6 +667,23 @@ export default function LeadDetailPage() {
           </div>
         </div>
       </div>
+
+      {waAccess && (
+        <Section title="WhatsApp" icon="chat">
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+            {!lead.setter_id && (
+              <Button size="sm" onClick={async () => {
+                try { await whatsappApi.take(lead.id); toast("Лид назначен на вас", "success"); reload(); }
+                catch (e: unknown) { toast((e as Error).message, "error"); reload(); }
+              }}>Взять себе</Button>
+            )}
+            {waChat && !waChat.is_ignored && (
+              <Button size="sm" variant="ghost" onClick={() => setIgnoreConfirm(true)}>Не лид</Button>
+            )}
+          </div>
+          <LeadWhatsAppChat leadId={lead.id} onChat={setWaChat} />
+        </Section>
+      )}
 
       {/* Stage line — archived stages are not part of the active path */}
       <Section title="Этапы сделки" icon="linear_scale">
@@ -923,6 +947,23 @@ export default function LeadDetailPage() {
           onCancel={() => setTransitionStage(null)}
         />
       )}
+      <ConfirmModal
+        open={ignoreConfirm}
+        title="Это не лид?"
+        message="Номер помечается как «Не лид»: новые сообщения с него не будут создавать лиды. Если этот лид создан автоматически из WhatsApp, он уйдёт в архив. Пометку можно снять в разделе WhatsApp."
+        confirmLabel="Не лид"
+        variant="danger"
+        onConfirm={async () => {
+          setIgnoreConfirm(false);
+          if (!waChat) return;
+          try {
+            await whatsappApi.ignore(waChat.id);
+            toast("Номер помечен «Не лид»", "success");
+            reload();
+          } catch (e: unknown) { toast((e as Error).message, "error"); }
+        }}
+        onCancel={() => setIgnoreConfirm(false)}
+      />
       <ConfirmModal
         open={archiveConfirm}
         title="Архивировать лид"

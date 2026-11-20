@@ -295,7 +295,7 @@ def _whatsapp_notifications(db: Session, user: User, is_sales: bool) -> list[dic
         if unassigned:
             out.append(_notif(
                 "wa_unassigned", "whatsapp", "warning",
-                f"{unassigned} неразобранных заявок из WhatsApp",
+                f"Неразобранных заявок из WhatsApp: {unassigned}",
                 "Возьмите лида себе на доске",
                 link="/leads/board?unassigned=true",
             ))

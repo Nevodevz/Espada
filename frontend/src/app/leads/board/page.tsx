@@ -11,7 +11,7 @@ import { applyOptimisticMove, dropAction, keepFormOnError, shouldPoll } from "@/
 import { TransitionModal } from "@/components/TransitionModal";
 import { useApp } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";
-import { api, leadApi, leadBoardApi, settingsApi, type BoardQuery } from "@/lib/api";
+import { api, leadApi, leadBoardApi, settingsApi, whatsappApi, type BoardQuery } from "@/lib/api";
 import {
   EMPTY_LEAD_FILTERS, type LeadBoardCard, type LeadBoardData, type LeadFilters, type LeadSource,
   type LeadStage, type RejectReason, type ServiceItem, type UserWithStats,
@@ -174,7 +174,12 @@ function BoardPage() {
       <Button variant="ghost" disabled={loading} onClick={() => load()}>Повторить</Button>
     </Card>}
     {!data && loading && <div role="status" style={{ padding: 40, color: "var(--text3)" }}>Загрузка доски…</div>}
-    {data && <LeadBoard data={data} disabled={loading || mutating} showClosed={toggles.show_closed} onDropCard={onDropCard} />}
+    {data && <LeadBoard data={data} disabled={loading || mutating} showClosed={toggles.show_closed} onDropCard={onDropCard}
+      onTake={async (card) => {
+        try { await whatsappApi.take(card.id); toast(`«${card.client_name}» — теперь ваш лид`, "success"); }
+        catch (failure) { toast((failure as Error).message || "Не удалось взять лид", "error"); }
+        await load(true);
+      }} />}
     {pending && <TransitionModal stage={pending.stage} card={pending.card} users={users} rejectReasons={rejectReasons}
       error={transitionError} busy={mutating} onConfirm={confirmTransition}
       onCancel={() => { if (!mutating) { setPending(null); setTransitionError(null); } }} />}
