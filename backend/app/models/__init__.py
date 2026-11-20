@@ -3,7 +3,7 @@ from typing import Literal, get_args
 from datetime import datetime, date
 
 from sqlalchemy import (
-    String, Integer, Boolean, ForeignKey, Date, DateTime, Enum, func, Text, JSON, Table, Column
+    String, Integer, Boolean, ForeignKey, Date, DateTime, Enum, func, Text, JSON, Table, Column, event,
 )
 from datetime import datetime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -343,6 +343,10 @@ class Lead(Base):
     company_name: Mapped[str] = mapped_column(String(200), default="")
     phone: Mapped[str] = mapped_column(String(50), default="", index=True)
     whatsapp: Mapped[str] = mapped_column(String(50), default="")
+    # Canonical digits of phone / whatsapp (see services.whatsapp.phone), kept in sync by
+    # the listener below; used to match incoming WhatsApp messages to leads.
+    phone_digits: Mapped[str] = mapped_column(String(32), default="", index=True)
+    whatsapp_digits: Mapped[str] = mapped_column(String(32), default="", index=True)
     instagram: Mapped[str] = mapped_column(String(100), default="")
     email: Mapped[str] = mapped_column(String(255), default="")
     address: Mapped[str] = mapped_column(String(300), default="")
@@ -392,6 +396,14 @@ class Lead(Base):
     setter: Mapped["User"] = relationship(foreign_keys=[setter_id])
     closer: Mapped["User"] = relationship(foreign_keys=[closer_id])
     reject_reason: Mapped["RejectReason | None"] = relationship(foreign_keys=[reject_reason_id])
+
+
+@event.listens_for(Lead, "before_insert")
+@event.listens_for(Lead, "before_update")
+def _sync_lead_phone_digits(_mapper, _connection, lead: "Lead") -> None:
+    from app.services.whatsapp.phone import normalize_phone
+    lead.phone_digits = normalize_phone(lead.phone)
+    lead.whatsapp_digits = normalize_phone(lead.whatsapp)
 
 
 class LeadStageHistory(Base):
