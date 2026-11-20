@@ -757,3 +757,60 @@ class LabProjectMember(Base):
 
     project: Mapped["LabProject"] = relationship(back_populates="members")
     user: Mapped["User"] = relationship()
+
+
+# ── WhatsApp ─────────────────────────────────────────────────────
+class WhatsAppChat(Base):
+    """One chat per WhatsApp number; `lead_id` is the lead it currently belongs to."""
+    __tablename__ = "whatsapp_chats"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    remote_jid: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    phone: Mapped[str] = mapped_column(String(32), default="", index=True)
+    lead_id: Mapped[int | None] = mapped_column(ForeignKey("leads.id", ondelete="SET NULL"), nullable=True, index=True)
+    # Lead auto-created from this chat — «Не лид» archives only that one.
+    created_lead_id: Mapped[int | None] = mapped_column(ForeignKey("leads.id", ondelete="SET NULL"), nullable=True)
+    push_name: Mapped[str] = mapped_column(String(200), default="")
+    last_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    unread_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False, server_default="0")
+    is_ignored: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    lead: Mapped["Lead | None"] = relationship(
+        foreign_keys=[lead_id], backref="whatsapp_chats",
+    )
+    messages: Mapped[list["WhatsAppMessage"]] = relationship(
+        back_populates="chat", cascade="all, delete-orphan",
+    )
+
+
+class WhatsAppMessage(Base):
+    __tablename__ = "whatsapp_messages"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    chat_id: Mapped[int] = mapped_column(ForeignKey("whatsapp_chats.id", ondelete="CASCADE"), index=True, nullable=False)
+    # Provider message id; NULL while an outgoing message waits for the provider's answer.
+    external_id: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True)
+    direction: Mapped[str] = mapped_column(String(3), nullable=False)          # in | out
+    sender_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    kind: Mapped[str] = mapped_column(String(16), default="text")              # text|image|document|audio|video|other
+    body: Mapped[str] = mapped_column(Text, default="")
+    media_path: Mapped[str] = mapped_column(String(500), default="")           # relative to WHATSAPP_MEDIA_ROOT
+    media_mime: Mapped[str] = mapped_column(String(120), default="")
+    media_name: Mapped[str] = mapped_column(String(255), default="")
+    status: Mapped[str] = mapped_column(String(16), default="received")        # pending|sent|delivered|read|failed|received
+    error: Mapped[str] = mapped_column(String(500), default="")
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    chat: Mapped["WhatsAppChat"] = relationship(back_populates="messages")
+    sender: Mapped["User | None"] = relationship(foreign_keys=[sender_user_id])
+
+
+class WhatsAppState(Base):
+    """Single row (id=1): last known connection state of the department number."""
+    __tablename__ = "whatsapp_state"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    state: Mapped[str] = mapped_column(String(16), default="unknown", nullable=False, server_default="unknown")
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
