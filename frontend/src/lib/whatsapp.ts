@@ -27,3 +27,11 @@ export function mediaKindFor(mime: string): "image" | "video" | "audio" | "docum
   if (mime.startsWith("audio/")) return "audio";
   return "document";
 }
+
+// Mirrors backend SAFE_INLINE_TYPES: the type comes from the client and can lie.
+const INLINE_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+
+/** Only real raster images are rendered; anything else (e.g. SVG with a script) is a download. */
+export function isInlineImage(mime: string): boolean {
+  return INLINE_IMAGE_TYPES.has((mime || "").toLowerCase());
+}

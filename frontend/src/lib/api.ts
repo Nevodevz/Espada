@@ -602,7 +602,11 @@ export const whatsappApi = {
     const token = getToken();
     const res = await fetch(`/api/whatsapp/media/${messageId}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
     if (!res.ok) throw new Error("Файл недоступен");
-    return URL.createObjectURL(await res.blob());
+    const blob = await res.blob();
+    // Re-type anything that is not a safe raster image so the browser never renders it.
+    const { isInlineImage } = await import("./whatsapp");
+    const safe = isInlineImage(blob.type) ? blob : new Blob([blob], { type: "application/octet-stream" });
+    return URL.createObjectURL(safe);
   },
   take: (leadId: number) => request<{ lead_id: number; setter_id: number }>(`/whatsapp/leads/${leadId}/take`, { method: "POST" }),
   ignore: (chatId: number) => request<import("./types").WhatsAppChat>(`/whatsapp/chats/${chatId}/ignore`, { method: "POST" }),

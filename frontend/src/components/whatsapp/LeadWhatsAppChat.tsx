@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui";
 import { whatsappApi } from "@/lib/api";
 import { fmtDateTime } from "@/lib/format";
-import { mergeMessages, statusLabel } from "@/lib/whatsapp";
+import { isInlineImage, mergeMessages, statusLabel } from "@/lib/whatsapp";
 import type { WhatsAppChat, WhatsAppMessage } from "@/lib/types";
 
 const POLL_MS = 5000;
@@ -22,7 +22,8 @@ function ProtectedImage({ messageId, alt }: { messageId: number; alt: string }) 
     return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [messageId]);
   if (!url) return <div className="wa-media-loading">Загрузка изображения…</div>;
-  return <a href={url} target="_blank" rel="noreferrer"><img src={url} alt={alt} className="wa-image" /></a>;
+  // No link to the blob: opening a blob URL in a tab runs it with the CRM origin.
+  return <img src={url} alt={alt} className="wa-image" />;
 }
 
 async function download(m: WhatsAppMessage) {
@@ -39,8 +40,8 @@ function Bubble({ m }: { m: WhatsAppMessage }) {
   return (
     <div className={`wa-row ${out ? "wa-out" : "wa-in"}`}>
       <div className={`wa-bubble${m.status === "failed" ? " wa-failed" : ""}`}>
-        {m.has_media && m.kind === "image" && <ProtectedImage messageId={m.id} alt={m.media_name || "Изображение"} />}
-        {m.has_media && m.kind !== "image" && (
+        {m.has_media && isInlineImage(m.media_mime) && <ProtectedImage messageId={m.id} alt={m.media_name || "Изображение"} />}
+        {m.has_media && !isInlineImage(m.media_mime) && (
           <button type="button" className="wa-file" onClick={() => download(m).catch(() => {})}>
             📎 {m.media_name || "Файл"}
           </button>
@@ -92,8 +93,10 @@ export function LeadWhatsAppChat({ leadId, onChat }: { leadId: number; onChat?: 
   useEffect(() => {
     lastId.current = undefined;
     load(false);
+    // Re-read the latest page (not only ids after the cursor): delivery/read ticks of messages
+    // already on screen update, and a slow commit with a lower id is never skipped.
     const timer = setInterval(() => {
-      if (document.visibilityState === "visible") load(true);
+      if (document.visibilityState === "visible") load(false);
     }, POLL_MS);
     return () => clearInterval(timer);
   }, [load]);

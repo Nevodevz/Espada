@@ -213,3 +213,43 @@ def test_lead_detail_has_chat_id(client, db, lead, staff, sales, fake):
     incoming(db)
     chat_id = db.query(WhatsAppChat).one().id
     assert client.get(f"/api/leads/{lead.id}", headers=auth_headers(staff)).json()["whatsapp_chat_id"] == chat_id
+
+
+def test_unsafe_image_type_served_as_download(client, db, lead, staff, sales, fake):
+    """A client can label any file as an image; only real raster types are served inline."""
+    incoming(db, kind="image", b64="PHN2Zz48c2NyaXB0PmFsZXJ0KDEpPC9zY3JpcHQ+PC9zdmc+", mime="image/svg+xml")
+    mid = db.query(WhatsAppMessage).one().id
+    r = client.get(f"/api/whatsapp/media/{mid}", headers=auth_headers(staff))
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("application/octet-stream")
+    assert r.headers["x-content-type-options"] == "nosniff"
+    assert r.headers["content-disposition"].startswith("attachment")
+
+
+def test_safe_image_inline_with_nosniff(client, db, lead, staff, sales, fake):
+    incoming(db, kind="image", b64="aGVsbG8=", mime="image/jpeg")
+    mid = db.query(WhatsAppMessage).one().id
+    r = client.get(f"/api/whatsapp/media/{mid}", headers=auth_headers(staff))
+    assert r.headers["content-type"].startswith("image/jpeg") and r.headers["x-content-type-options"] == "nosniff"
+
+
+def test_echo_of_sent_message_is_adopted_not_duplicated(client, db, lead, staff, sales, fake):
+    """If Evolution echoes our own message as messages.upsert before we commit, keep one row, credited to the sender."""
+    real_send = fake.send_text
+
+    def send_with_echo(phone, text):
+        result = real_send(phone, text)
+        inbound.handle_events(db, [InboundMessage(
+            external_id=result.external_id, remote_jid=f"{phone}@s.whatsapp.net", phone=phone, from_me=True,
+            push_name="", kind="text", body=text, media_b64=None, media_mime="", media_name="",
+            sent_at=datetime(2026, 11, 20, 4, 0, tzinfo=timezone.utc),
+        )])
+        return result
+
+    fake.send_text = send_with_echo
+    r = client.post(f"/api/whatsapp/leads/{lead.id}/messages", json={"text": "Привет"}, headers=auth_headers(staff))
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    rows = db.query(WhatsAppMessage).all()
+    assert len(rows) == 1
+    assert rows[0].external_id == "OUT1" and rows[0].sender_user_id == staff.id and rows[0].status == "sent"

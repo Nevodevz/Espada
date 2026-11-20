@@ -62,6 +62,7 @@ def test_status_requires_admin(client, staff, fake):
 
 def test_status_for_admin(client, db, admin, fake, monkeypatch):
     monkeypatch.setattr(settings, "EVOLUTION_URL", "http://evolution:8080")
+    monkeypatch.setattr(settings, "EVOLUTION_API_KEY", "k")
     db.add(WhatsAppState(id=1, state="open"))
     db.commit()
     body = client.get("/api/whatsapp/status", headers=auth_headers(admin)).json()
@@ -94,3 +95,34 @@ def test_logout(client, db, admin, fake):
     r = client.post("/api/whatsapp/logout", headers=auth_headers(admin))
     assert r.status_code == 200 and r.json() == {"state": "close"}
     assert db.get(WhatsAppState, 1).state == "close"
+
+
+def test_webhook_retries_once_on_integrity_error(client, db, stages, fake, monkeypatch):
+    """Two webhooks for a brand-new number race on UNIQUE(remote_jid): the loser retries, nothing is lost."""
+    from sqlalchemy.exc import IntegrityError
+    from app.services.whatsapp import inbound
+    from app.models import WhatsAppMessage
+    real = inbound.handle_events
+    calls = {"n": 0}
+
+    def flaky(session, events):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise IntegrityError("INSERT", {}, Exception("duplicate remote_jid"))
+        return real(session, events)
+
+    monkeypatch.setattr("app.routers.whatsapp.handle_events", flaky)
+    r = client.post(f"/api/whatsapp/webhook/{SECRET}", json=payload("upsert_text"))
+    assert r.status_code == 200 and r.json() == {"ok": True}
+    assert calls["n"] == 2 and db.query(WhatsAppMessage).count() == 1
+
+
+def test_webhook_infrastructure_error_returns_503(client, db, fake, monkeypatch):
+    """A DB/disk failure must not be acknowledged — Evolution retries the delivery."""
+    from sqlalchemy.exc import OperationalError
+
+    def broken(session, events):
+        raise OperationalError("SELECT", {}, Exception("db down"))
+
+    monkeypatch.setattr("app.routers.whatsapp.handle_events", broken)
+    assert client.post(f"/api/whatsapp/webhook/{SECRET}", json=payload("upsert_text")).status_code == 503

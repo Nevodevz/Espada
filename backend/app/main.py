@@ -30,7 +30,8 @@ async def lifespan(app: FastAPI):
     # Media lives on a persistent volume; create it so the first upload succeeds.
     Path(settings.MEDIA_ROOT).mkdir(parents=True, exist_ok=True)
     poller = None
-    if settings.EVOLUTION_URL:
+    from app.services.whatsapp.runtime import whatsapp_configured
+    if whatsapp_configured():
         from app.core.database import SessionLocal
         from app.services.whatsapp.runtime import poll_state_forever
         poller = asyncio.create_task(poll_state_forever(SessionLocal))

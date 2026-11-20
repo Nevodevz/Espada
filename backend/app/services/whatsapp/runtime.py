@@ -17,9 +17,14 @@ def _evolution(url: str, key: str, instance: str) -> EvolutionProvider:
     return EvolutionProvider(url, key, instance)
 
 
+def whatsapp_configured() -> bool:
+    """compose always sets EVOLUTION_URL; WhatsApp counts as set up only once the key and secret exist."""
+    return bool(settings.EVOLUTION_URL and settings.EVOLUTION_API_KEY and settings.WHATSAPP_WEBHOOK_SECRET)
+
+
 def get_provider() -> WhatsAppProvider | None:
-    """The configured provider, or None while WhatsApp is not set up (EVOLUTION_URL empty)."""
-    if not settings.EVOLUTION_URL:
+    """The configured provider, or None while WhatsApp is not set up."""
+    if not (settings.EVOLUTION_URL and settings.EVOLUTION_API_KEY):
         return None
     return _evolution(settings.EVOLUTION_URL, settings.EVOLUTION_API_KEY, settings.WHATSAPP_INSTANCE)
 

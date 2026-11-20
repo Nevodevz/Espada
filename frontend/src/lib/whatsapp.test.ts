@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mediaKindFor, mergeMessages, statusLabel } from "./whatsapp";
+import { isInlineImage, mediaKindFor, mergeMessages, statusLabel } from "./whatsapp";
 import type { WhatsAppMessage } from "./types";
 
 const m = (id: number, sent_at: string, status: WhatsAppMessage["status"] = "sent") =>
@@ -33,5 +33,12 @@ describe("mediaKindFor", () => {
     expect(mediaKindFor("video/mp4")).toBe("video");
     expect(mediaKindFor("audio/ogg")).toBe("audio");
     expect(mediaKindFor("application/pdf")).toBe("document");
+  });
+});
+
+describe("isInlineImage", () => {
+  it("allows only real raster images (an SVG/HTML labelled as image could run a script)", () => {
+    for (const t of ["image/jpeg", "image/png", "image/webp", "image/gif", "IMAGE/PNG"]) expect(isInlineImage(t)).toBe(true);
+    for (const t of ["image/svg+xml", "text/html", "application/pdf", ""]) expect(isInlineImage(t)).toBe(false);
   });
 });

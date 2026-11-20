@@ -9,6 +9,7 @@ from app.core.database import get_db
 from app.core.config import settings
 from app.core.deps import get_current_user
 from app.services.whatsapp.access import can_use_whatsapp
+from app.services.whatsapp.runtime import whatsapp_configured
 from app.models import (
     Task, Board, User, Role,
     Meeting, MeetingStatus,
@@ -314,7 +315,7 @@ def _whatsapp_notifications(db: Session, user: User, is_sales: bool) -> list[dic
                 "Действующий клиент — поддержка или допродажа",
                 link=f"/leads/{lead.id}",
             ))
-    if (user.role == Role.admin or user.is_founder) and settings.EVOLUTION_URL:
+    if (user.role == Role.admin or user.is_founder) and whatsapp_configured():
         state = db.get(WhatsAppState, 1)
         if state is None or state.state != "open":
             out.append(_notif(

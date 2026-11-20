@@ -82,8 +82,14 @@ def test_client_wrote_for_won_lead_owner(client, db, stages, lead, staff, sales)
     assert n and lead.client_name in n["title"]
 
 
-def test_disconnected_alert_for_admin(client, db, admin, staff, sales, monkeypatch):
+def configure(monkeypatch):
     monkeypatch.setattr(settings, "EVOLUTION_URL", "http://evolution:8080")
+    monkeypatch.setattr(settings, "EVOLUTION_API_KEY", "k")
+    monkeypatch.setattr(settings, "WHATSAPP_WEBHOOK_SECRET", "s")
+
+
+def test_disconnected_alert_for_admin(client, db, admin, staff, sales, monkeypatch):
+    configure(monkeypatch)
     db.add(WhatsAppState(id=1, state="close"))
     db.commit()
     alert = notif_ids(client, admin).get("wa_disconnected")
@@ -97,3 +103,13 @@ def test_disconnected_alert_for_admin(client, db, admin, staff, sales, monkeypat
 def test_no_alert_when_whatsapp_not_configured(client, db, admin, monkeypatch):
     monkeypatch.setattr(settings, "EVOLUTION_URL", "")
     assert "wa_disconnected" not in notif_ids(client, admin)
+
+
+def test_no_alert_until_keys_are_set(client, db, admin, monkeypatch):
+    """compose always sets EVOLUTION_URL; without the key and secret WhatsApp is simply not set up yet."""
+    monkeypatch.setattr(settings, "EVOLUTION_URL", "http://evolution:8080")
+    monkeypatch.setattr(settings, "EVOLUTION_API_KEY", "")
+    db.add(WhatsAppState(id=1, state="close"))
+    db.commit()
+    assert "wa_disconnected" not in notif_ids(client, admin)
+    assert client.get("/api/whatsapp/status", headers=auth_headers(admin)).json()["configured"] is False

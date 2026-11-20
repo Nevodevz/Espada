@@ -5,9 +5,11 @@ import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import settings
@@ -20,10 +22,12 @@ from app.services.whatsapp.evolution import mediatype_for, parse_webhook
 from app.services.whatsapp.inbound import create_lead_for_chat, get_or_create_chat, handle_events, set_state
 from app.services.whatsapp.media import media_abspath, save_media
 from app.services.whatsapp.provider import ProviderError, WhatsAppProvider
-from app.services.whatsapp.runtime import get_provider, webhook_url
+from app.services.whatsapp.runtime import get_provider, webhook_url, whatsapp_configured
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/whatsapp", tags=["whatsapp"])
+
+SAFE_INLINE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
 
 
 # ───────────────────────── Webhook ──────────────────────────────
@@ -33,16 +37,41 @@ async def webhook(secret: str, request: Request, db: Session = Depends(get_db)):
     expected = settings.WHATSAPP_WEBHOOK_SECRET
     if not expected or not hmac.compare_digest(secret.encode(), expected.encode()):
         raise HTTPException(404, "Not Found")
+    raw = await request.body()
+    # JSON parsing, base64 decoding, disk and DB work are blocking: keep them off the event loop
+    # so a large media webhook never freezes the API for everyone else.
+    return await run_in_threadpool(_apply_webhook, db, raw)
+
+
+def _apply_webhook(db: Session, raw: bytes) -> dict:
     try:
-        payload = json.loads(await request.body())
-        handle_events(db, parse_webhook(payload))
-        db.commit()
-    except Exception:
-        # Answer 200 anyway: a non-2xx makes Evolution retry the same broken payload forever.
-        db.rollback()
-        log.exception("whatsapp: webhook processing failed")
-        return {"ok": False}
-    return {"ok": True}
+        events = parse_webhook(json.loads(raw))
+    except ValueError:
+        log.warning("whatsapp: webhook body is not JSON")
+        return {"ok": False}  # retrying an unparseable payload never helps
+    for attempt in (1, 2):
+        try:
+            handle_events(db, events)
+            db.commit()
+            return {"ok": True}
+        except IntegrityError:
+            # Two deliveries for a new number raced on UNIQUE(remote_jid / external_id):
+            # the second attempt finds the row the other one created.
+            db.rollback()
+            if attempt == 2:
+                log.exception("whatsapp: webhook conflict persisted")
+                raise HTTPException(503, "Повторите доставку")
+        except (OperationalError, OSError):
+            # DB or disk trouble: do not acknowledge, Evolution will deliver again.
+            db.rollback()
+            log.exception("whatsapp: webhook infrastructure failure")
+            raise HTTPException(503, "Временная ошибка, повторите доставку")
+        except Exception:
+            # A payload our code cannot handle: acknowledge so it is not retried forever.
+            db.rollback()
+            log.exception("whatsapp: webhook processing failed")
+            return {"ok": False}
+    return {"ok": False}
 
 
 # ───────────────────────── Connection (admin) ───────────────────
@@ -61,7 +90,7 @@ class ConnectOut(BaseModel):
 
 def _require_provider(provider: WhatsAppProvider | None) -> WhatsAppProvider:
     if provider is None:
-        raise HTTPException(503, "WhatsApp не настроен: не задан EVOLUTION_URL")
+        raise HTTPException(503, "WhatsApp не настроен: не заданы EVOLUTION_URL / EVOLUTION_API_KEY")
     return provider
 
 
@@ -76,7 +105,7 @@ def _provider_call(fn, *args):
 def status(db: Session = Depends(get_db), _: User = Depends(require_admin)):
     row = db.get(WhatsAppState, 1)
     return StatusOut(
-        configured=bool(settings.EVOLUTION_URL),
+        configured=whatsapp_configured(),
         state=row.state if row else "unknown",
         updated_at=row.updated_at if row else None,
     )
@@ -216,14 +245,48 @@ def _deliver(db: Session, lead: Lead, chat: WhatsAppChat, message: WhatsAppMessa
         message.error = str(exc)[:500]
         db.commit()
         raise HTTPException(502, f"Не удалось отправить: {exc}") from exc
-    message.external_id = result.external_id
-    message.status = "sent"
     chat.last_message_at = message.sent_at
     if lead.setter_id is None:
         lead.setter_id = user.id
+    # Evolution may echo our own message back as messages.upsert (fromMe) before we commit.
+    echo = _find_echo(db, result.external_id, message.id)
+    if echo is None:
+        message.external_id = result.external_id
+        message.status = "sent"
+        try:
+            db.commit()
+            db.refresh(message)
+            return _message_out(message)
+        except IntegrityError:
+            # The echo was committed by the webhook in the meantime.
+            db.rollback()
+            echo = _find_echo(db, result.external_id, None)
+            if echo is None:
+                raise
+            message = None
+    return _adopt_echo(db, echo, message, user)
+
+
+def _find_echo(db: Session, external_id: str, own_id: int | None) -> WhatsAppMessage | None:
+    q = db.query(WhatsAppMessage).filter(WhatsAppMessage.external_id == external_id)
+    if own_id is not None:
+        q = q.filter(WhatsAppMessage.id != own_id)
+    return q.first()
+
+
+def _adopt_echo(db: Session, echo: WhatsAppMessage, pending: WhatsAppMessage | None, user: User) -> MessageOut:
+    """Keep one row: the echo, credited to the employee who sent it."""
+    echo.sender_user_id = user.id
+    if pending is not None:
+        echo.kind = pending.kind
+        echo.body = pending.body or echo.body
+        echo.media_path = pending.media_path or echo.media_path
+        echo.media_mime = pending.media_mime or echo.media_mime
+        echo.media_name = pending.media_name or echo.media_name
+        db.delete(pending)
     db.commit()
-    db.refresh(message)
-    return _message_out(message)
+    db.refresh(echo)
+    return _message_out(echo)
 
 
 @router.get("/access")
@@ -290,6 +353,12 @@ async def send_media(
         raise HTTPException(422, "Пустой файл")
     mime = file.content_type or "application/octet-stream"
     name = (file.filename or "file")[:255]
+    # Disk write and the (up to 20 s) provider call block: run them in the threadpool.
+    return await run_in_threadpool(_send_media_sync, db, provider, lead, user, data, mime, name, caption)
+
+
+def _send_media_sync(db: Session, provider: WhatsAppProvider, lead: Lead, user: User,
+                     data: bytes, mime: str, name: str, caption: str) -> MessageOut:
     chat = _chat_for_sending(db, lead)
     message = WhatsAppMessage(
         chat_id=chat.id, direction="out", sender_user_id=user.id, kind=mediatype_for(mime),
@@ -313,8 +382,17 @@ def media(message_id: int, db: Session = Depends(get_db), _: User = Depends(requ
         raise HTTPException(404, "Файл не найден")
     if not path.is_file():
         raise HTTPException(404, "Файл не найден")
-    return FileResponse(path, media_type=message.media_mime or "application/octet-stream",
-                        filename=message.media_name or path.name)
+    # The MIME type comes from the client's phone and can lie (an «image» that is really
+    # SVG/HTML with a script). Only real raster images are served inline; everything else
+    # is a download, and nosniff stops the browser from guessing.
+    inline = (message.media_mime or "").lower() in SAFE_INLINE_TYPES
+    return FileResponse(
+        path,
+        media_type=message.media_mime.lower() if inline else "application/octet-stream",
+        filename=message.media_name or path.name,
+        content_disposition_type="inline" if inline else "attachment",
+        headers={"X-Content-Type-Options": "nosniff"},
+    )
 
 
 @router.post("/leads/{lead_id}/take")
