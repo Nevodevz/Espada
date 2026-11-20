@@ -614,3 +614,26 @@ export const whatsappApi = {
   makeLead: (chatId: number) => request<import("./types").WhatsAppChat>(`/whatsapp/chats/${chatId}/make-lead`, { method: "POST" }),
   otherChats: () => request<import("./types").WhatsAppChat[]>("/whatsapp/chats/other"),
 };
+
+
+// ── Lead tasks & feed ──────────────────────────────────────────
+export const leadTasksApi = {
+  list: (leadId: number, status: "open" | "all" = "open") =>
+    request<import("./types").LeadTask[]>(`/leads/${leadId}/tasks?status=${status}`),
+  create: (leadId: number, body: { kind: import("./types").LeadTaskKind; due_at: string; assignee_id?: number | null; comment?: string }) =>
+    request<import("./types").LeadTask>(`/leads/${leadId}/tasks`, { method: "POST", body: JSON.stringify(body) }),
+  complete: (id: number, result: "connected" | "no_answer" | "done", note = "") =>
+    request<import("./types").CompleteResult>(`/lead-tasks/${id}/complete`, { method: "POST", body: JSON.stringify({ result, note }) }),
+  reschedule: (id: number, dueAt: string) =>
+    request<import("./types").LeadTask>(`/lead-tasks/${id}/reschedule`, { method: "POST", body: JSON.stringify({ due_at: dueAt }) }),
+  cancel: (id: number) => request<import("./types").LeadTask>(`/lead-tasks/${id}/cancel`, { method: "POST" }),
+  mine: (scope: "overdue" | "today" | "upcoming" | "all" = "all", assignee: string = "me") =>
+    request<import("./types").LeadTask[]>(`/lead-tasks?scope=${scope}&assignee=${encodeURIComponent(assignee)}`),
+};
+
+export const leadFeedApi = {
+  page: (leadId: number, before?: string | null, limit = 50) =>
+    request<import("./types").FeedPage>(`/leads/${leadId}/feed?limit=${limit}${before ? `&before=${encodeURIComponent(before)}` : ""}`),
+  addNote: (leadId: number, text: string) =>
+    request<unknown>(`/leads/${leadId}/activities`, { method: "POST", body: JSON.stringify({ activity_type: "note", description: text }) }),
+};

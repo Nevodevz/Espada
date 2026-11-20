@@ -682,6 +682,10 @@ export interface Lead {
   paid_amount: number;
   remaining_amount: number;
   deal_status: DealStatus;
+  /** Nearest open task (null = «Нет задачи»). */
+  next_task?: NextTask | null;
+  /** Missed calls in a row. */
+  no_answer_streak?: number;
 }
 
 export interface FunnelCard extends Lead {
@@ -1093,4 +1097,59 @@ export interface WhatsAppConnect {
   state: string;
   qr_base64: string | null;
   pairing_code: string | null;
+}
+
+
+// ── Lead tasks & feed ──────────────────────────────────────────
+export type LeadTaskKind = "call" | "message" | "meeting" | "other";
+export type LeadTaskResult = "connected" | "no_answer" | "rescheduled" | "done" | "auto_canceled";
+
+export interface LeadTask {
+  id: number;
+  lead_id: number;
+  lead_name: string;
+  kind: LeadTaskKind;
+  due_at: string;
+  assignee: User | null;
+  created_by_id: number | null;
+  comment: string;
+  status: "open" | "done" | "canceled";
+  result: LeadTaskResult | null;
+  result_note: string;
+  completed_at: string | null;
+  overdue: boolean;
+  /** Current user may complete / reschedule / cancel it. */
+  can_edit: boolean;
+}
+
+export interface CompleteResult {
+  task: LeadTask;
+  no_answer_streak: number;
+  /** 5+ missed calls in a row: offer «Минус — не выходит на связь». */
+  suggest_lost: boolean;
+}
+
+export interface NextTask {
+  id: number;
+  kind: LeadTaskKind;
+  due_at: string;
+  overdue: boolean;
+  assignee_id: number | null;
+}
+
+export type FeedItemType =
+  | "created" | "stage" | "activity" | "note" | "message" | "meeting"
+  | "task_created" | "task_done" | "file" | "payment";
+
+export interface FeedItem {
+  key: string;
+  type: FeedItemType;
+  at: string;
+  actor: User | null;
+  data: Record<string, any>;
+}
+
+export interface FeedPage {
+  items: FeedItem[];
+  next_before: string | null;
 }
