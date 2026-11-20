@@ -244,6 +244,7 @@ class ScheduledMeetingOut(BaseModel):
 
 class LeadDetailOut(LeadOut):
     scheduled_meeting: Optional[ScheduledMeetingOut] = None
+    whatsapp_chat_id: Optional[int] = None
     stage_history: list[LeadStageHistoryOut] = []
     activities: list[LeadActivityOut] = []
     meetings: list[MeetingBriefOut] = []
@@ -793,7 +794,10 @@ def get_lead(lead_id: int, db: Session = Depends(get_db), _: User = Depends(get_
         payments = [_payment_out(p) for p in rows]
 
     open_meeting = scheduled_meeting_for(db, lead.id)
+    from app.routers.whatsapp import lead_chat  # local import: whatsapp imports this module's neighbours
+    wa_chat = lead_chat(db, lead)
     return LeadDetailOut(
+        whatsapp_chat_id=wa_chat.id if wa_chat else None,
         scheduled_meeting=ScheduledMeetingOut.model_validate(open_meeting) if open_meeting else None,
         **_lead_to_dict(lead),
         source=lead.source,
