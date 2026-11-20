@@ -11,7 +11,7 @@ from app.core.deps import get_current_user
 from app.models import (
     Lead, LeadStageHistory, LeadActivity, LeadFile,
     LeadSource, Service, LeadStage, Meeting, Task,
-    User, Role, LeadStatus, Deal, DealPayment, RejectReason, PaymentStatus,
+    User, Role, LeadStatus, Deal, DealPayment, RejectReason, PaymentStatus, WhatsAppChat,
 )
 from app.schemas import UserOut
 from app.services import deals as deal_service
@@ -1221,6 +1221,49 @@ def delete_payment(
 
 
 # ─────────────────────────── Activities / files ──────────────────
+
+class FeedItemOut(BaseModel):
+    key: str
+    type: str
+    at: datetime
+    actor: Optional[UserOut] = None
+    data: dict = {}
+
+
+class FeedPageOut(BaseModel):
+    items: list[FeedItemOut]
+    next_before: Optional[str] = None
+
+
+@router.get("/{lead_id}/feed", response_model=FeedPageOut)
+def lead_feed(
+    lead_id: int,
+    before: Optional[str] = None,
+    limit: int = Query(50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Card feed: WhatsApp (only for users with chat access), notes, touches, stages,
+    meetings, tasks, files and payments — newest first, cursor-paginated."""
+    from app.services.lead_feed import build_feed
+    from app.services.whatsapp.access import can_use_whatsapp
+
+    lead = _load_lead(db, lead_id)
+    include_messages = can_use_whatsapp(db, current_user)
+    try:
+        items, next_before = build_feed(db, lead, include_messages=include_messages, before=before, limit=limit)
+    except (ValueError, UnicodeDecodeError):
+        raise HTTPException(422, "Неверный курсор ленты")
+    if include_messages and not before:
+        db.query(WhatsAppChat).filter(WhatsAppChat.lead_id == lead.id, WhatsAppChat.unread_count > 0) \
+            .update({WhatsAppChat.unread_count: 0}, synchronize_session=False)
+        db.commit()
+    return FeedPageOut(
+        items=[FeedItemOut(key=i.key, type=i.type, at=i.at,
+                           actor=UserOut.model_validate(i.actor) if i.actor else None, data=i.data) for i in items],
+        next_before=next_before,
+    )
+
 
 @router.post("/{lead_id}/activities", response_model=LeadActivityOut, status_code=201)
 def create_activity(
