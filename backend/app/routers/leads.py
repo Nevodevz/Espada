@@ -15,6 +15,7 @@ from app.models import (
 )
 from app.schemas import UserOut
 from app.services import deals as deal_service
+from app.services.sales_metrics import latest_deal_by_lead
 from app.services.leads import (
     scheduled_meeting_for,
     change_lead_stage, add_activity, get_lead_timeline, StageTransitionError, active_stages,
@@ -443,19 +444,8 @@ def _lead_to_dict(lead: Lead) -> dict:
 
 
 def _deals_by_lead(db: Session, lead_ids: list[int]) -> dict[int, Deal]:
-    """Most recent deal per lead, in a single query (avoids N+1 on lists)."""
-    if not lead_ids:
-        return {}
-    rows = (
-        db.query(Deal)
-        .filter(Deal.lead_id.in_(lead_ids))
-        .order_by(Deal.lead_id, Deal.created_at.desc(), Deal.id.desc())
-        .all()
-    )
-    out: dict[int, Deal] = {}
-    for d in rows:
-        out.setdefault(d.lead_id, d)
-    return out
+    """Most recent deal per lead (shared with the sales metrics)."""
+    return latest_deal_by_lead(db, lead_ids)
 
 
 def _money_fields(db: Session, deal: Deal | None) -> dict:
