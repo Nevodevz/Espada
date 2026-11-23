@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
-from app.models import Meeting, MeetingStatus, User, Role
+from app.models import Lead, LeadStage, Meeting, MeetingStatus, User, Role
+from app.services.leads import change_lead_stage, is_open_lead, scheduled_meeting_for, schedule_meeting_for_lead
 from app.schemas import UserOut
 
 router = APIRouter(prefix="/api/meetings", tags=["meetings"])
@@ -30,6 +31,7 @@ class MeetingCreate(BaseModel):
     duration_minutes: int = Field(DEFAULT_MEETING_MINUTES, ge=5, le=24 * 60)
     lead_id: Optional[int] = None
     parent_id: Optional[int] = None
+    setter_id: Optional[int] = None
 
 class MeetingUpdate(BaseModel):
     closer_id: Optional[int] = None
@@ -148,8 +150,32 @@ def create_meeting(
 ):
     if not _can_create(user):
         raise HTTPException(403, "Назначать встречи могут только сеттеры и администраторы")
+    if payload.lead_id:
+        lead = db.get(Lead, payload.lead_id)
+        if lead is None:
+            raise HTTPException(404, "Лид не найден")
+        if not is_open_lead(db, lead):
+            raise HTTPException(422, "Лид закрыт или в архиве")
+        setter_id = payload.setter_id or lead.setter_id or user.id
+        meeting_stage = db.query(LeadStage).filter(LeadStage.kind == "meeting").first()
+        cur = db.get(LeadStage, lead.stage_id) if lead.stage_id else None
+        if meeting_stage and (cur is None or cur.position < meeting_stage.position):
+            change_lead_stage(db, lead, meeting_stage.id, changed_by=user.id, extra_data={
+                "meeting_datetime": payload.meeting_date, "closer_id": payload.closer_id,
+                "setter_id": setter_id, "address": payload.address, "notes": payload.notes,
+                "duration_minutes": payload.duration_minutes,
+            })
+            m = scheduled_meeting_for(db, lead.id)
+        else:
+            m = schedule_meeting_for_lead(
+                db, lead, meeting_dt=payload.meeting_date, closer_id=payload.closer_id,
+                setter_id=setter_id, address=payload.address, notes=payload.notes,
+                duration_minutes=payload.duration_minutes,
+            )
+        db.commit()
+        return _load(db, m.id)
     m = Meeting(
-        closer_id=payload.closer_id, setter_id=user.id,
+        closer_id=payload.closer_id, setter_id=payload.setter_id or user.id,
         meeting_date=payload.meeting_date, address=payload.address,
         client_name=payload.client_name, client_phone=payload.client_phone,
         notes=payload.notes, duration_minutes=payload.duration_minutes,

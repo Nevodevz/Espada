@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     Lead, LeadStageHistory, LeadActivity, LeadStage, Meeting, Deal, DealPayment,
-    MeetingStatus, PaymentStatus,
+    LeadStatus, MeetingStatus, PaymentStatus,
 )
 from app.services import deals as deal_service
 
@@ -131,30 +131,31 @@ def scheduled_meeting_for(db: Session, lead_id: int) -> Meeting | None:
     )
 
 
-def _handle_meeting_stage(db: Session, lead: Lead, changed_by: int | None, extra: dict) -> None:
-    meeting_date_str = extra.get("meeting_date") or extra.get("date")
-    meeting_time_str = extra.get("meeting_time") or extra.get("time", "00:00")
-    address = extra.get("address", "")
-    # «Комментарий» — canonical storage is Meeting.notes.
-    notes = extra.get("comment") or extra.get("notes") or ""
-    closer_id = extra.get("closer_id") or lead.closer_id
-    setter_id = extra.get("setter_id") or lead.setter_id
+def is_open_lead(db: Session, lead: Lead) -> bool:
+    """Not archived and not on a won/lost stage (a lead with no stage counts as open)."""
+    if lead.status == LeadStatus.archived:
+        return False
+    stage = db.get(LeadStage, lead.stage_id) if lead.stage_id else None
+    return stage is None or not (stage.is_won or stage.is_lost)
 
-    meeting_dt = datetime.now(timezone.utc)
-    if meeting_date_str:
-        try:
-            local = datetime.fromisoformat(f"{meeting_date_str[:10]}T{meeting_time_str or '00:00'}:00")
-            meeting_dt = local.replace(tzinfo=BISHKEK_TZ).astimezone(timezone.utc)
-        except ValueError:
-            pass
 
-    try:
-        duration = int(extra.get("duration_minutes") or 60)
-    except (TypeError, ValueError):
-        duration = 60
-    duration = max(5, min(duration, 24 * 60))
+def schedule_meeting_for_lead(
+    db: Session,
+    lead: Lead,
+    *,
+    meeting_dt: datetime,
+    closer_id: int | None,
+    setter_id: int | None,
+    address: str = "",
+    notes: str = "",
+    duration_minutes: int | None = None,
+) -> Meeting:
+    """Move the lead's open meeting to `meeting_dt`, or create one.
 
-    # Re-entering the stage moves the open meeting instead of creating a duplicate.
+    Blank address/notes/duration/closer/setter mean "unchanged" on a reschedule,
+    never "erase what the closer wrote". Fills `lead.closer_id` when it is empty.
+    """
+    duration = max(5, min(duration_minutes or 60, 24 * 60))
     m = scheduled_meeting_for(db, lead.id)
     if m is None:
         m = Meeting(
@@ -164,19 +165,51 @@ def _handle_meeting_stage(db: Session, lead: Lead, changed_by: int | None, extra
         )
         db.add(m)
     else:
-        # Rescheduling: blank fields mean "unchanged", never "erase what the closer wrote".
         if address:
             m.address = address
         if notes:
             m.notes = notes
-        if extra.get("duration_minutes"):
+        if duration_minutes:
             m.duration_minutes = duration
         if closer_id:
             m.closer_id = closer_id
         if setter_id:
             m.setter_id = setter_id
     m.meeting_date = meeting_dt
+    if closer_id and not lead.closer_id:
+        lead.closer_id = closer_id
     db.flush()
+    return m
+
+
+def _handle_meeting_stage(db: Session, lead: Lead, changed_by: int | None, extra: dict) -> None:
+    meeting_date_str = extra.get("meeting_date") or extra.get("date")
+    meeting_time_str = extra.get("meeting_time") or extra.get("time", "00:00")
+
+    # A caller that already has an exact instant passes it as `meeting_datetime` (UTC-aware).
+    meeting_dt = extra.get("meeting_datetime") or datetime.now(timezone.utc)
+    if meeting_date_str and not extra.get("meeting_datetime"):
+        try:
+            local = datetime.fromisoformat(f"{meeting_date_str[:10]}T{meeting_time_str or '00:00'}:00")
+            meeting_dt = local.replace(tzinfo=BISHKEK_TZ).astimezone(timezone.utc)
+        except ValueError:
+            pass
+
+    try:
+        duration = int(extra.get("duration_minutes") or 0) or None
+    except (TypeError, ValueError):
+        duration = None
+
+    schedule_meeting_for_lead(
+        db, lead,
+        meeting_dt=meeting_dt,
+        closer_id=extra.get("closer_id") or lead.closer_id,
+        setter_id=extra.get("setter_id") or lead.setter_id,
+        address=extra.get("address", ""),
+        # «Комментарий» — canonical storage is Meeting.notes.
+        notes=extra.get("comment") or extra.get("notes") or "",
+        duration_minutes=duration,
+    )
 
 
 def _handle_contract_stage(db: Session, lead: Lead, changed_by: int | None, extra: dict) -> None:

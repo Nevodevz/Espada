@@ -600,6 +600,7 @@ def list_leads(
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
+    open_only: bool = Query(False),
     limit: int = Query(30, le=100),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -612,6 +613,10 @@ def list_leads(
         date_to=date_to, search=search,
     )
     q = q.filter(Lead.status == (status or LeadStatus.active))
+    if open_only:
+        closed = db.query(LeadStage.id).filter(LeadStage.is_won | LeadStage.is_lost)
+        q = q.filter(Lead.status != LeadStatus.archived)
+        q = q.filter(Lead.stage_id.is_(None) | Lead.stage_id.notin_(closed))
 
     total = q.count()
     items = q.order_by(Lead.created_at.desc()).offset(offset).limit(limit).all()
