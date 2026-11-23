@@ -8,7 +8,7 @@ import { useApp } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";
 import { api, leadApi, meetingApi } from "@/lib/api";
 import { bishkekDateTimeParts, localInputToUtc, utcToLocalInput } from "@/lib/format";
-import { meetingFormFromLead, newClientPayload } from "@/lib/meetingForm";
+import { createMeetingForClient, meetingFormFromLead } from "@/lib/meetingForm";
 import type { Lead, Meeting, UserWithStats } from "@/lib/types";
 import { DEFAULT_MEETING_MINUTES, MEETING_DURATIONS } from "@/lib/types";
 import { CloserSlots } from "./CloserSlots";
@@ -111,23 +111,26 @@ export function MeetingModal({
     if (!form.client_name.trim() || !form.closer_id || !form.meeting_date) return;
     setSaving(true);
     try {
-      let leadForMeeting: number | null = leadId ?? pickedLeadId;
       const setterId = form.setter_id ? Number(form.setter_id) : (me?.id ?? null);
-      if (pickMode && leadForMeeting === null && newClientText !== null) {
-        const lead = await leadApi.create(newClientPayload(newClientText, setterId));
-        leadForMeeting = lead.id;
-      }
-      const created = await meetingApi.create({
-        closer_id: Number(form.closer_id),
-        meeting_date: localInputToUtc(form.meeting_date),
-        address: form.address,
-        client_name: form.client_name.trim(),
-        client_phone: form.client_phone,
-        notes: form.notes,
-        duration_minutes: Number(form.duration_minutes) || DEFAULT_MEETING_MINUTES,
-        parent_id: parentId ?? null,
-        lead_id: leadForMeeting,
-        ...(pickMode && form.setter_id ? { setter_id: Number(form.setter_id) } : {}),
+      const created = await createMeetingForClient({
+        leadId: leadId ?? pickedLeadId,
+        newClientText: pickMode ? newClientText : null,
+        setterId,
+        createLead: (payload) => leadApi.create(payload),
+        // A retry after a failed meeting must reuse the lead we just made.
+        onLeadCreated: (id) => { setPickedLeadId(id); setNewClientText(null); },
+        createMeeting: (leadForMeeting) => meetingApi.create({
+          closer_id: Number(form.closer_id),
+          meeting_date: localInputToUtc(form.meeting_date),
+          address: form.address,
+          client_name: form.client_name.trim(),
+          client_phone: form.client_phone,
+          notes: form.notes,
+          duration_minutes: Number(form.duration_minutes) || DEFAULT_MEETING_MINUTES,
+          parent_id: parentId ?? null,
+          lead_id: leadForMeeting,
+          ...(pickMode && form.setter_id ? { setter_id: Number(form.setter_id) } : {}),
+        }),
       });
       toast("Встреча назначена");
       onClose();

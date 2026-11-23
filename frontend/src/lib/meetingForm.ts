@@ -35,3 +35,35 @@ export function newClientPayload(
     ? { client_name: t, phone: t, setter_id: setterId }
     : { client_name: t, setter_id: setterId };
 }
+
+/**
+ * Create the meeting, making a new lead first when the client was typed in.
+ * The new lead's id is reported through `onLeadCreated` right away, so a retry
+ * after a failed meeting reuses it instead of creating a second lead.
+ */
+export async function createMeetingForClient<M>(opts: {
+  leadId: number | null;
+  newClientText: string | null;
+  setterId: number | null;
+  createLead: (payload: ReturnType<typeof newClientPayload>) => Promise<{ id: number }>;
+  createMeeting: (leadId: number | null) => Promise<M>;
+  onLeadCreated: (leadId: number) => void;
+}): Promise<M> {
+  let leadId = opts.leadId;
+  let leadJustCreated = false;
+  if (leadId === null && opts.newClientText !== null) {
+    const lead = await opts.createLead(newClientPayload(opts.newClientText, opts.setterId));
+    leadId = lead.id;
+    leadJustCreated = true;
+    opts.onLeadCreated(lead.id);
+  }
+  try {
+    return await opts.createMeeting(leadId);
+  } catch (e) {
+    if (leadJustCreated) {
+      const msg = e instanceof Error ? e.message : String(e);
+      throw new Error(`Клиент создан, но встреча не назначена: ${msg}`);
+    }
+    throw e;
+  }
+}

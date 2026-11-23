@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { looksLikePhone, meetingFormFromLead, newClientPayload } from "./meetingForm";
+import { createMeetingForClient, looksLikePhone, meetingFormFromLead, newClientPayload } from "./meetingForm";
 
 describe("meetingFormFromLead", () => {
   it("copies phone and setter", () => {
@@ -24,5 +24,22 @@ describe("new client payload", () => {
   });
   it("puts a phone into phone and keeps a placeholder name", () => {
     expect(newClientPayload("+996700111222", 3)).toEqual({ client_name: "+996700111222", phone: "+996700111222", setter_id: 3 });
+  });
+});
+
+describe("createMeetingForClient", () => {
+  it("does not create a second lead when retrying after a failed meeting", async () => {
+    let leadCalls = 0;
+    let picked: number | null = null;
+    let meetingTries = 0;
+    const run = () => createMeetingForClient({
+      leadId: picked, newClientText: picked === null ? "Асан" : null, setterId: 1,
+      createLead: async () => { leadCalls++; return { id: 42 }; },
+      createMeeting: async (id) => { if (++meetingTries === 1) throw new Error("Занято"); return { lead: id }; },
+      onLeadCreated: (id) => { picked = id; },
+    });
+    await expect(run()).rejects.toThrow("Клиент создан, но встреча не назначена: Занято");
+    expect(await run()).toEqual({ lead: 42 });
+    expect(leadCalls).toBe(1);
   });
 });
