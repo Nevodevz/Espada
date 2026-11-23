@@ -713,18 +713,6 @@ export interface LeadBoardData {
   leads: LeadBoardCard[];
 }
 
-export interface FunnelStats {
-  new_leads: number;
-  meetings_stage: number;
-  contracts_sent: number;
-  waiting_payment: number;
-  closed_won: number;
-  conversion_pct: number;
-  deals_sum: number;
-  paid_sum: number;
-  remaining_sum: number;
-}
-
 export interface FunnelResponse {
   leads: FunnelCard[];
   stages: LeadStage[];
@@ -802,18 +790,6 @@ export interface LeadListResponse {
   total: number;
 }
 
-export interface LeadStats {
-  leads_today: number;
-  leads_period: number;
-  meetings_period: number;
-  closed_won: number;
-  conversion_pct: number;
-  deals_sum: number;
-  paid_sum: number;
-  remaining_sum: number;
-  cpl: number | null;
-}
-
 /** Shared filter state for the two views of the «Лиды и воронка» page. */
 export interface LeadFilters {
   search: string;
@@ -846,12 +822,6 @@ export const ACTIVITY_TYPES = [
 export const FILE_TYPES = ["КП", "Договор", "ТЗ", "Счёт", "Бриф", "Другое"] as const;
 
 // ===== END Leads =====
-
-export interface SalesSummary {
-  setters: { user: User | null; totals: Record<string, number> }[];
-  closers: { user: User | null; counts: Record<string, number>; total: number }[];
-  col_defs: { key: string; label: string }[];
-}
 
 // ===== Analytics =====
 
@@ -1172,4 +1142,59 @@ export interface AwaitingReplyItem {
 export interface SalesToday {
   unclaimed: UnclaimedLead[];
   awaiting_reply: AwaitingReplyItem[];
+}
+
+// ── «Показатели» (GET /api/sales-hub/metrics) ──────────────────
+export interface SalesMetricsTotals {
+  leads: number;
+  meetings_booked: number;
+  meetings_held: number;
+  sales: number;
+  conversion_pct: number;
+  deals_amount: number;
+  paid: number;
+  remaining: number;
+}
+
+export interface SalesMetricsSource {
+  source_id: number | null;
+  name: string;
+  count: number;
+  pct: number;
+}
+
+export interface SetterMetricsRow {
+  user_id: number;
+  name: string;
+  touches: number;
+  calls_connected: number;
+  calls_no_answer: number;
+  booked: number;
+  held: number;
+}
+
+export type CloserOutcome = "scheduled" | "closed" | "minus" | "push" | "not_held";
+
+export interface CloserMetricsRow {
+  user_id: number;
+  name: string;
+  by_status: Record<CloserOutcome, number>;
+  sales: number;
+  sales_amount: number;
+}
+
+export interface SalesMetrics {
+  totals: SalesMetricsTotals;
+  funnel: FunnelPoint[];
+  daily: DailyPoint[];
+  sources: SalesMetricsSource[];
+  employees: { setters: SetterMetricsRow[]; closers: CloserMetricsRow[] };
+}
+
+export interface SalesMetricsQuery {
+  date_from: string;
+  date_to: string;
+  source_id?: number;
+  service_id?: number;
+  user_id?: number;
 }

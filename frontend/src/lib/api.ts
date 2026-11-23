@@ -160,11 +160,13 @@ export const api = {
   salesColumns: () => request<ColumnDef[]>("/sales/columns"),
   addSalesColumn: (data: { label: string; kind?: string }) => request<ColumnDef>("/sales/columns", { method: "POST", body: JSON.stringify(data) }),
   deleteSalesColumn: (id: number) => request<void>(`/sales/columns/${id}`, { method: "DELETE" }),
-  salesRecords: (f?: { user_id?: number; date_from?: string; date_to?: string }) => {
+  salesRecords: (f?: { user_id?: number; date_from?: string; date_to?: string; limit?: number; offset?: number }) => {
     const p = new URLSearchParams();
     if (f?.user_id) p.set("user_id", String(f.user_id));
     if (f?.date_from) p.set("date_from", f.date_from);
     if (f?.date_to) p.set("date_to", f.date_to);
+    if (f?.limit) p.set("limit", String(f.limit));
+    if (f?.offset) p.set("offset", String(f.offset));
     const qs = p.toString();
     return request<SalesRecord[]>(`/sales/records${qs ? "?" + qs : ""}`);
   },
@@ -354,13 +356,6 @@ export const leadBoardApi = {
 };
 
 export const leadApi = {
-  stats: (f?: { date_from?: string; date_to?: string }) => {
-    const p = new URLSearchParams();
-    if (f?.date_from) p.set("date_from", f.date_from);
-    if (f?.date_to) p.set("date_to", f.date_to);
-    const qs = p.toString();
-    return request<import("./types").LeadStats>(`/leads/stats${qs ? "?" + qs : ""}`);
-  },
   list: (f?: BoardQuery) =>
     request<import("./types").LeadListResponse>(`/leads${listQueryString(f)}`),
   get: (id: number) => request<import("./types").LeadDetail>(`/leads/${id}`),
@@ -372,8 +367,6 @@ export const leadApi = {
   // Funnel accepts the same filter set as the list — the two views never diverge.
   funnel: (f?: LeadQuery) =>
     request<import("./types").FunnelResponse>(`/leads/funnel${leadQueryString(f)}`),
-  funnelStats: (f?: LeadQuery) =>
-    request<import("./types").FunnelStats>(`/leads/funnel-stats${leadQueryString(f)}`),
   addActivity: (id: number, data: { activity_type: string; channel?: string; description?: string; responsible_id?: number }) =>
     request<import("./types").LeadActivity>(`/leads/${id}/activities`, { method: "POST", body: JSON.stringify(data) }),
   addFile: (id: number, data: { name: string; url: string; file_type?: string }) =>
@@ -544,13 +537,6 @@ export const meetingApi = {
   update: (id: number, data: any) => request<import("./types").Meeting>(`/meetings/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   setStatus: (id: number, status: string) => request<import("./types").Meeting>(`/meetings/${id}/status?status=${status}`, { method: "PATCH" }),
   delete: (id: number) => request<void>(`/meetings/${id}`, { method: "DELETE" }),
-  summary: (f?: { date_from?: string; date_to?: string }) => {
-    const p = new URLSearchParams();
-    if (f?.date_from) p.set("date_from", f.date_from);
-    if (f?.date_to)   p.set("date_to",   f.date_to);
-    const qs = p.toString();
-    return request<import("./types").SalesSummary>(`/meetings/summary/all${qs ? "?" + qs : ""}`);
-  },
 };
 
 // API key management
@@ -595,6 +581,13 @@ async function whatsappForm<T>(path: string, form: FormData): Promise<T> {
 
 export const salesHubApi = {
   today: () => request<import("./types").SalesToday>("/sales-hub/today"),
+  metrics: (q: import("./types").SalesMetricsQuery) => {
+    const p = new URLSearchParams({ date_from: q.date_from, date_to: q.date_to });
+    if (q.source_id) p.set("source_id", String(q.source_id));
+    if (q.service_id) p.set("service_id", String(q.service_id));
+    if (q.user_id) p.set("user_id", String(q.user_id));
+    return request<import("./types").SalesMetrics>(`/sales-hub/metrics?${p.toString()}`);
+  },
 };
 
 export const whatsappApi = {

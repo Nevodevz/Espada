@@ -30,6 +30,8 @@ export function LeadBoardView({ query, users, refreshKey = 0, onBusyChange }: {
   const [transitionError, setTransitionError] = useState<string | null>(null);
 
   useEffect(() => { onBusyChange?.(mutating); }, [mutating, onBusyChange]);
+  // Leaving the board (e.g. switching to «Список») mid-move must not leave the page locked.
+  useEffect(() => () => onBusyChange?.(false), [onBusyChange]);
 
   const load = useCallback(async (quiet = false) => {
     const request = ++generation.current;

@@ -16,13 +16,13 @@ const NAV_MAIN = [
 const SALES_SLUG = "sales";
 const FINANCE_SLUG = "finance";
 
-// The lead list/funnel and the independent sales Kanban share the same leads.
+// Sales module: four screens (spec §4). Each item owns its whole path prefix,
+// so /leads/123 lights «Лиды» and /sales/meetings?view=table lights «Встречи».
 const SALES_SUBNAV = [
-  { href: "/leads",    icon: "contacts",      label: "Лиды и воронка" },
-  { href: "/leads/board", icon: "view_kanban", label: "Доска" },
-  { href: "/tasks", icon: "task_alt", label: "Мои задачи" },
-  { href: "/dept/sales?meetings=1", icon: "handshake", label: "Встречи" },
-  { href: "/dept/sales", icon: "bar_chart",   label: "Дневник" },
+  { href: "/sales/today",    icon: "wb_sunny",    label: "Сегодня" },
+  { href: "/leads",          icon: "view_kanban", label: "Лиды" },
+  { href: "/sales/meetings", icon: "event",       label: "Встречи" },
+  { href: "/sales/metrics",  icon: "bar_chart",   label: "Показатели" },
 ];
 
 const FINANCE_SUBNAV = [
@@ -172,10 +172,10 @@ export function Shell({ children, title }: { children: React.ReactNode; title?: 
                 {salesOpen && (
                   <div className="nav-sub">
                     {SALES_SUBNAV.map((item) => (
-                      <Link key={item.href} href={item.href} className={`nav-link nav-sub-link ${(item.href === "/leads" ? pathname.startsWith("/leads") && !pathname.startsWith("/leads/board") : pathname.startsWith(item.href)) ? "active" : ""}`}>
+                      <Link key={item.href} href={item.href} className={`nav-link nav-sub-link ${pathname.startsWith(item.href) ? "active" : ""}`}>
                         <span className="material-symbols-outlined nav-ico">{item.icon}</span>
                         <span style={{ flex: 1 }}>{item.label}</span>
-                        {item.href === "/tasks" && overdueTasks > 0 && (
+                        {item.href === "/sales/today" && overdueTasks > 0 && (
                           <span aria-label={`Просрочено задач: ${overdueTasks}`} style={{ borderRadius: 9, padding: "0 6px", fontSize: 11, background: "var(--red)", color: "#fff" }}>{overdueTasks}</span>
                         )}
                       </Link>

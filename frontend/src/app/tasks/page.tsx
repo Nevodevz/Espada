@@ -1,13 +1,7 @@
-"use client";
+import { redirect } from "next/navigation";
+import { withQuery, type PageSearchParams } from "@/lib/redirectQuery";
 
-import { Suspense } from "react";
-import { Shell } from "@/components/Shell";
-import { MyTasksBlock } from "@/components/sales/MyTasksBlock";
-
-export default function MyTasksPage() {
-  return (
-    <Shell title="Мои задачи">
-      <Suspense fallback={<div style={{ padding: 30 }}>Загрузка…</div>}><MyTasksBlock /></Suspense>
-    </Shell>
-  );
+/** Legacy route: «Мои задачи» became part of «Сегодня» (`?assignee=` is kept). */
+export default function TasksRedirectPage({ searchParams }: { searchParams: PageSearchParams }) {
+  redirect(withQuery("/sales/today", searchParams));
 }
