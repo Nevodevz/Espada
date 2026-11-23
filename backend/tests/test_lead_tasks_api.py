@@ -163,7 +163,7 @@ def test_unassigned_tasks_in_manager_bell(client, db, lead, admin, sales):
                     assignee_id=None, status="open"))
     db.commit()
     items = {n["id"]: n for n in client.get("/api/notifications", headers=auth_headers(admin)).json()["items"]}
-    assert "tasks_unassigned" in items and items["tasks_unassigned"]["link"] == "/tasks?assignee=none"
+    assert "tasks_unassigned" in items and items["tasks_unassigned"]["link"] == "/sales/today?assignee=none"
 
 
 def test_no_tasks_on_closed_or_archived_lead(client, db, lead, staff, stages, sales):

@@ -121,7 +121,7 @@ def get_notifications(db: Session = Depends(get_db), user: User = Depends(get_cu
             f"meeting_today_{m.id}", "meeting_today", "critical",
             f"Встреча сегодня: {m.client_name}",
             f"{mt.strftime('%H:%M')} · {role_label}",
-            link="/dept/sales/meetings",
+            link="/sales/meetings",
         ))
 
     # ─── 5. Upcoming meetings (next 7 days, user is closer/setter) ─
@@ -144,7 +144,7 @@ def get_notifications(db: Session = Depends(get_db), user: User = Depends(get_cu
             f"meeting_upcoming_{m.id}", "meeting", "info",
             f"Встреча {mt.strftime('%d.%m')}: {m.client_name}",
             f"{mt.strftime('%H:%M')} · {role_label}",
-            link="/dept/sales/meetings",
+            link="/sales/meetings",
         ))
 
     # ─── 6–7. Lead tasks: due soon, overdue, leads without a task ───
@@ -167,7 +167,7 @@ def get_notifications(db: Session = Depends(get_db), user: User = Depends(get_cu
                 f"payment_overdue_{p.id}", "payment_overdue", "warning",
                 f"Оплата просрочена: {who}",
                 f"Ожидалась {p.planned_date.strftime('%d.%m')} · остаток {outstanding:,} сом".replace(",", " "),
-                link=f"/leads/{deal.lead_id}" if deal.lead_id else "/leads?view=funnel",
+                link=f"/leads/{deal.lead_id}" if deal.lead_id else "/leads?view=board",
             ))
 
     # ─── 9. Recent deals — paid or minus (admin/founder) ─────────
@@ -183,7 +183,7 @@ def get_notifications(db: Session = Depends(get_db), user: User = Depends(get_cu
                 f"deal_paid_{d.id}", "deal_paid", "info",
                 f"Оплата получена: сделка #{d.id}",
                 f"{d.paid_amount:,} сом",
-                link=f"/leads/{d.lead_id}" if d.lead_id else "/leads?view=funnel",
+                link=f"/leads/{d.lead_id}" if d.lead_id else "/leads?view=board",
             ))
 
         recent_minus = (
@@ -196,7 +196,7 @@ def get_notifications(db: Session = Depends(get_db), user: User = Depends(get_cu
                 f"meeting_minus_{m.id}", "meeting_minus", "warning",
                 f"Встреча ушла в минус: {m.client_name}",
                 m.meeting_date.astimezone(_BISHKEK).strftime('%d.%m') if m.meeting_date else "",
-                link="/dept/sales/meetings",
+                link="/sales/meetings",
             ))
 
     # ─── 10. Cashflow warning (admin/founder/финдир) ─────────────
@@ -250,7 +250,7 @@ def _whatsapp_notifications(db: Session, user: User, is_sales: bool) -> list[dic
                 "wa_unassigned", "whatsapp", "warning",
                 f"Неразобранных заявок из WhatsApp: {unassigned}",
                 "Возьмите лида себе на доске",
-                link="/leads/board?unassigned=true",
+                link="/leads?view=board&unassigned=true",
             ))
         wrote = (
             db.query(Lead).join(WhatsAppChat, WhatsAppChat.lead_id == Lead.id).join(LeadStage, LeadStage.id == Lead.stage_id)

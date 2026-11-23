@@ -3,7 +3,6 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import func, and_
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
@@ -363,31 +362,6 @@ class LeadListResponse(BaseModel):
     total: int
 
 
-class LeadStats(BaseModel):
-    leads_today: int
-    leads_period: int
-    meetings_period: int
-    closed_won: int
-    conversion_pct: float
-    # Сумма открытых сделок (не выигранных и не проигранных)
-    deals_sum: int
-    paid_sum: int
-    remaining_sum: int
-    cpl: Optional[float] = None
-
-
-class FunnelStats(BaseModel):
-    new_leads: int
-    meetings_stage: int
-    contracts_sent: int
-    waiting_payment: int
-    closed_won: int
-    conversion_pct: float
-    deals_sum: int
-    paid_sum: int
-    remaining_sum: int
-
-
 class FunnelCardOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -488,67 +462,6 @@ def _apply_attribution(lead: Lead, data: dict) -> None:
 
 # ─────────────────────────── Routes ────────────────────────────
 
-@router.get("/stats", response_model=LeadStats)
-def lead_stats(
-    date_from: Optional[str] = Query(None),
-    date_to: Optional[str] = Query(None),
-    db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
-):
-    today = date.today()
-    q_base = db.query(Lead).filter(Lead.status == LeadStatus.active)
-
-    q_period = q_base
-    if date_from:
-        q_period = q_period.filter(Lead.created_at >= datetime.fromisoformat(date_from))
-    if date_to:
-        q_period = q_period.filter(Lead.created_at < datetime.fromisoformat(date_to))
-
-    leads_today = db.query(func.count(Lead.id)).filter(
-        Lead.status == LeadStatus.active,
-        func.date(Lead.created_at) == today,
-    ).scalar() or 0
-
-    leads_period = q_period.count()
-
-    q_meetings = db.query(func.count(Meeting.id)).filter(Meeting.lead_id.isnot(None))
-    if date_from:
-        q_meetings = q_meetings.filter(Meeting.created_at >= datetime.fromisoformat(date_from))
-    if date_to:
-        q_meetings = q_meetings.filter(Meeting.created_at < datetime.fromisoformat(date_to))
-    meetings_period = q_meetings.scalar() or 0
-
-    won_stage_ids = [s.id for s in db.query(LeadStage).filter(LeadStage.is_won == True).all()]
-    closed_won = q_period.filter(Lead.stage_id.in_(won_stage_ids)).count() if won_stage_ids else 0
-
-    conversion_pct = round(closed_won / leads_period * 100, 1) if leads_period > 0 else 0.0
-
-    # Money totals come from deals, not from the deprecated lead columns.
-    lost_stage_ids = [s.id for s in db.query(LeadStage).filter(LeadStage.is_lost == True).all()]
-    exclude_ids = won_stage_ids + lost_stage_ids
-    open_q = db.query(Lead.id).filter(Lead.status == LeadStatus.active)
-    if exclude_ids:
-        open_q = open_q.filter(Lead.stage_id.notin_(exclude_ids))
-    open_ids = [r[0] for r in open_q.all()]
-
-    deals_sum = paid_sum = 0
-    if open_ids:
-        for deal in _deals_by_lead(db, open_ids).values():
-            deals_sum += int(deal.amount or 0)
-            paid_sum += int(deal.paid_amount or 0)
-
-    return LeadStats(
-        leads_today=leads_today,
-        leads_period=leads_period,
-        meetings_period=meetings_period,
-        closed_won=closed_won,
-        conversion_pct=conversion_pct,
-        deals_sum=deals_sum,
-        paid_sum=paid_sum,
-        remaining_sum=max(deals_sum - paid_sum, 0),
-    )
-
-
 def _apply_list_filters(q, *, source_id, service_id, setter_id, closer_id, stage_id,
                         date_from, date_to, search):
     """Shared filter set for the list and funnel views of the same page."""
@@ -636,71 +549,6 @@ def list_leads(
 
 
 # ─────────────────────────── Funnel (must be before /{lead_id}) ──
-
-@router.get("/funnel-stats", response_model=FunnelStats)
-def funnel_stats(
-    date_from: Optional[str] = Query(None),
-    date_to: Optional[str] = Query(None),
-    source_id: Optional[int] = Query(None),
-    service_id: Optional[int] = Query(None),
-    stage_id: Optional[int] = Query(None),
-    setter_id: Optional[int] = Query(None),
-    closer_id: Optional[int] = Query(None),
-    search: Optional[str] = Query(None),
-    db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
-):
-    stages = active_stages(db)
-    stage_map = {s.id: s for s in db.query(LeadStage).all()}
-
-    q = db.query(Lead).filter(Lead.status == LeadStatus.active)
-    q = _apply_list_filters(
-        q, source_id=source_id, service_id=service_id, setter_id=setter_id,
-        closer_id=closer_id, stage_id=stage_id, date_from=date_from,
-        date_to=date_to, search=search,
-    )
-    leads = q.all()
-    deals = _deals_by_lead(db, [l.id for l in leads])
-
-    from app.services.leads import _stage_kind
-    new_leads = meetings_stage = contracts_sent = waiting_payment_count = closed_won = 0
-    deals_sum = paid_sum = 0
-    min_pos = min((s.position for s in stages), default=0)
-
-    for lead in leads:
-        stage = stage_map.get(lead.stage_id) if lead.stage_id else None
-        kind = _stage_kind(stage) if stage else "generic"
-        if kind == "generic" and stage and stage.position == min_pos:
-            new_leads += 1
-        if kind == "meeting":
-            meetings_stage += 1
-        if kind == "contract":
-            contracts_sent += 1
-        if kind == "waiting_payment":
-            waiting_payment_count += 1
-        if kind == "won":
-            closed_won += 1
-        if kind not in ("won", "lost"):
-            deal = deals.get(lead.id)
-            if deal is not None:
-                deals_sum += int(deal.amount or 0)
-                paid_sum += int(deal.paid_amount or 0)
-
-    total = len(leads)
-    conversion_pct = round(closed_won / total * 100, 1) if total > 0 else 0.0
-
-    return FunnelStats(
-        new_leads=new_leads,
-        meetings_stage=meetings_stage,
-        contracts_sent=contracts_sent,
-        waiting_payment=waiting_payment_count,
-        closed_won=closed_won,
-        conversion_pct=conversion_pct,
-        deals_sum=deals_sum,
-        paid_sum=paid_sum,
-        remaining_sum=max(deals_sum - paid_sum, 0),
-    )
-
 
 @router.get("/funnel", response_model=FunnelResponse)
 def get_funnel(

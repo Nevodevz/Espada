@@ -62,7 +62,7 @@ def test_unassigned_notification_for_sales_only(client, db, stages, staff, outsi
     db.commit()
     chat_for(db, free, unread=1)
     n = notif_ids(client, staff).get("wa_unassigned")
-    assert n and "1" in n["title"] and n["link"] == "/leads/board?unassigned=true"
+    assert n and "1" in n["title"] and n["link"] == "/leads?view=board&unassigned=true"
     assert "wa_unassigned" not in notif_ids(client, outsider)
 
 
