@@ -9,7 +9,10 @@ from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models import Lead, LeadStage, Meeting, MeetingStatus, User, Role
-from app.services.leads import change_lead_stage, is_open_lead, scheduled_meeting_for, schedule_meeting_for_lead
+from app.services.leads import (
+    StageTransitionError, change_lead_stage, is_open_lead, scheduled_meeting_for, schedule_meeting_for_lead,
+)
+from app.services.sales_access import is_sales_head
 from app.schemas import UserOut
 
 router = APIRouter(prefix="/api/meetings", tags=["meetings"])
@@ -68,7 +71,8 @@ MeetingOut.model_rebuild()
 _SETTER_POSITIONS = {"Сеттер", "Руководитель продаж"}
 
 def _can_create(user: User) -> bool:
-    return user.role == Role.admin or user.position in _SETTER_POSITIONS
+    """Setters and sales heads (admin, founder, «Руководитель продаж») — same rule as the frontend."""
+    return is_sales_head(user) or user.position in _SETTER_POSITIONS
 
 def _can_change_status(user: User, meeting: Meeting) -> bool:
     """Клоузер может менять статус своей встречи, admin — любой."""
@@ -150,21 +154,32 @@ def create_meeting(
 ):
     if not _can_create(user):
         raise HTTPException(403, "Назначать встречи могут только сеттеры и администраторы")
-    if payload.lead_id:
+    # A sub-meeting («Добавить подвстречу») is always a plain child insert, even when
+    # the parent is lead-linked: it must never reschedule the parent or move the lead.
+    if payload.lead_id and payload.parent_id is None:
         lead = db.get(Lead, payload.lead_id)
         if lead is None:
             raise HTTPException(404, "Лид не найден")
         if not is_open_lead(db, lead):
             raise HTTPException(422, "Лид закрыт или в архиве")
         setter_id = payload.setter_id or lead.setter_id or user.id
-        meeting_stage = db.query(LeadStage).filter(LeadStage.kind == "meeting").first()
+        meeting_stage = (
+            db.query(LeadStage)
+            .filter(LeadStage.kind == "meeting", LeadStage.is_archived == False)  # noqa: E712
+            .order_by(LeadStage.position)
+            .first()
+        )
         cur = db.get(LeadStage, lead.stage_id) if lead.stage_id else None
         if meeting_stage and (cur is None or cur.position < meeting_stage.position):
-            change_lead_stage(db, lead, meeting_stage.id, changed_by=user.id, meeting_dt=payload.meeting_date, extra_data={
-                "closer_id": payload.closer_id,
-                "setter_id": setter_id, "address": payload.address, "notes": payload.notes,
-                "duration_minutes": payload.duration_minutes,
-            })
+            try:
+                change_lead_stage(db, lead, meeting_stage.id, changed_by=user.id, meeting_dt=payload.meeting_date, extra_data={
+                    "closer_id": payload.closer_id,
+                    "setter_id": setter_id, "address": payload.address, "notes": payload.notes,
+                    "duration_minutes": payload.duration_minutes,
+                })
+            except StageTransitionError as exc:
+                db.rollback()
+                raise HTTPException(422, str(exc))
             m = scheduled_meeting_for(db, lead.id)
         else:
             m = schedule_meeting_for_lead(

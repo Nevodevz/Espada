@@ -3,7 +3,8 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session, joinedload
 
-from app.models import Lead, LeadStage, LeadStatus, LeadTask, Role, User
+from app.models import Lead, LeadStage, LeadStatus, LeadTask, User
+from app.services.sales_access import is_sales_head
 
 SOON_MINUTES = 15
 BISHKEK = timezone(timedelta(hours=6))
@@ -46,18 +47,19 @@ def due_reminders(db: Session, user: User, now: datetime | None = None) -> list[
             out.append(_item(f"task_soon_{task.id}", "info", f"Через {SOON_MINUTES} минут: {label} — {_client(task)}",
                              f"В {stamp}", f"/leads/{task.lead_id}"))
 
-    if user.role == Role.admin or user.is_founder:
+    head = is_sales_head(user)
+    if head:
         unassigned = db.query(LeadTask.id).filter(LeadTask.status == "open", LeadTask.assignee_id.is_(None)).count()
         if unassigned:
             out.append(_item("tasks_unassigned", "warning", f"Задачи без ответственного: {unassigned}",
                              "Назначьте ответственного", "/sales/today?assignee=none"))
 
-    # Open leads with no open task: for admins all of them, else leads where the user is setter/closer.
+    # Open leads with no open task: for sales heads all of them, else leads where the user is setter/closer.
     closed_stage_ids = [s.id for s in db.query(LeadStage.id).filter(LeadStage.kind.in_(("won", "lost")))]
     q = db.query(Lead.id).filter(Lead.status == LeadStatus.active)
     if closed_stage_ids:
         q = q.filter((Lead.stage_id.is_(None)) | (Lead.stage_id.notin_(closed_stage_ids)))
-    if not (user.role == Role.admin or user.is_founder):
+    if not head:
         q = q.filter((Lead.setter_id == user.id) | (Lead.closer_id == user.id))
     with_task = db.query(LeadTask.lead_id).filter(LeadTask.status == "open")
     no_task = q.filter(Lead.id.notin_(with_task)).count()

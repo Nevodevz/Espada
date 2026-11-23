@@ -118,3 +118,66 @@ def test_stage_endpoint_ignores_client_meeting_datetime(client, db, admin, lead,
     assert r.status_code == 200, r.text
     m = db.query(Meeting).filter_by(lead_id=lead.id).one()
     assert m.meeting_date.replace(tzinfo=None).isoformat() == "2026-12-01T06:00:00"
+
+
+def test_sub_meeting_with_lead_keeps_parent(client, db, staff, other_staff, lead):
+    parent = _post(client, staff, _body(lead, other_staff)).json()
+    r = _post(client, staff, _body(lead, other_staff, meeting_date="2026-12-09T06:00:00Z", parent_id=parent["id"]))
+    assert r.status_code == 201, r.text
+    child = r.json()
+    assert child["id"] != parent["id"] and child["parent_id"] == parent["id"]
+    assert child["setter_id"] == staff.id
+    db.expire_all()
+    p = db.get(Meeting, parent["id"])
+    assert p.meeting_date.replace(tzinfo=None).isoformat() == "2026-12-01T06:00:00"
+    assert db.query(Meeting).filter_by(lead_id=lead.id).count() == 2
+
+
+def test_sub_meeting_for_closed_lead_allowed(client, db, staff, other_staff, lead, stages):
+    parent = _post(client, staff, _body(lead, other_staff)).json()
+    lead.stage_id = stages["Оплачено"].id
+    db.commit()
+    r = _post(client, staff, _body(lead, other_staff, meeting_date="2026-12-09T06:00:00Z", parent_id=parent["id"]))
+    assert r.status_code == 201, r.text
+    assert r.json()["parent_id"] == parent["id"]
+    db.refresh(lead)
+    assert lead.stage_id == stages["Оплачено"].id
+
+
+def test_archived_meeting_stage_ignored(client, db, staff, other_staff, lead, stages):
+    from app.models import LeadStage
+    # The original «Встреча» (lowest id) is archived; a fresh active meeting stage replaces it.
+    stages["Встреча"].is_archived = True
+    fresh = LeadStage(name="Встреча 2", position=2, kind="meeting")
+    db.add(fresh)
+    lead.stage_id = stages["Новый лид"].id
+    db.commit()
+    r = _post(client, staff, _body(lead, other_staff))
+    assert r.status_code == 201, r.text
+    db.refresh(lead)
+    assert lead.stage_id == fresh.id
+
+
+def test_stage_transition_error_is_422(client, db, staff, other_staff, lead, stages, monkeypatch):
+    from app.routers import meetings as meetings_router
+    from app.services.leads import StageTransitionError
+
+    def boom(*a, **kw):
+        raise StageTransitionError("нельзя")
+
+    monkeypatch.setattr(meetings_router, "change_lead_stage", boom)
+    lead.stage_id = stages["Созвон"].id
+    db.commit()
+    r = _post(client, staff, _body(lead, other_staff))
+    assert r.status_code == 422 and r.json()["detail"] == "нельзя"
+
+
+def test_founder_can_create_meeting(client, db, other_staff, lead):
+    from app.core.security import hash_password
+    from app.models import Role, User
+    founder = User(name="Основатель", email="f@test.kg", password_hash=hash_password("x"),
+                   role=Role.staff, position="Директор", is_founder=True, is_active=True)
+    db.add(founder)
+    db.commit()
+    r = _post(client, founder, _body(lead, other_staff))
+    assert r.status_code == 201, r.text
