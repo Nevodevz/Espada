@@ -14,7 +14,7 @@ import type {
 import { MEETING_STATUS, MEETING_STATUS_KEYS } from "@/lib/types";
 import { MeetingDetailModal } from "./MeetingDetailModal";
 import { MeetingModal } from "./MeetingModal";
-import { closerOptions } from "@/lib/roles";
+import { closerOptions, isSalesHead } from "@/lib/roles";
 
 const SETTER_POSITIONS = new Set(["Сеттер", "Руководитель продаж"]);
 
@@ -52,11 +52,13 @@ function toEvent(m: Meeting): CalendarEvent {
  * the create action differ. Filters double as a reporting view for closers.
  */
 export function SalesMeetingsCalendar({
-  dept, isAdmin, currentUser,
+  dept, isAdmin, currentUser, defaultCloserId,
 }: {
   dept: Department;
   isAdmin: boolean;
   currentUser: UserWithStats | undefined;
+  /** Initial closer filter (e.g. the logged-in closer); the user can reset it. */
+  defaultCloserId?: number;
 }) {
   const cal = useCalendarState({
     storageKey: "sales-meetings",
@@ -72,7 +74,7 @@ export function SalesMeetingsCalendar({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [filterCloser, setFilterCloser] = useState("");
+  const [filterCloser, setFilterCloser] = useState(defaultCloserId ? String(defaultCloserId) : "");
   const [filterSetter, setFilterSetter] = useState("");
   const [filterStatus, setFilterStatus] = useState<MeetingStatus | "">("");
 
@@ -85,7 +87,7 @@ export function SalesMeetingsCalendar({
 
   const canCreate = isAdmin
     || currentUser?.position === "Сеттер"
-    || currentUser?.position === "Руководитель продаж";
+    || (!!currentUser && isSalesHead(currentUser));
 
   const { from, to } = cal.range;
 

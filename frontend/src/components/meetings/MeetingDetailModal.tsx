@@ -6,6 +6,7 @@ import { Modal } from "@/components/Modal";
 import { Button, ConfirmModal, FormField, Input, Select, Textarea } from "@/components/ui";
 import { useToast } from "@/context/ToastContext";
 import { meetingApi } from "@/lib/api";
+import { isSalesHead } from "@/lib/roles";
 import { fmtDateTime, localInputToUtc, utcToLocalInput } from "@/lib/format";
 import type { Meeting, MeetingStatus, UserWithStats } from "@/lib/types";
 import { DEFAULT_MEETING_MINUTES, MEETING_DURATIONS, MEETING_STATUS } from "@/lib/types";
@@ -62,7 +63,7 @@ export function MeetingDetailModal({
   const canChangeStatus = isAdmin || meeting.closer_id === currentUser?.id;
   const canEdit = isAdmin
     || currentUser?.position === "Сеттер"
-    || currentUser?.position === "Руководитель продаж";
+    || (!!currentUser && isSalesHead(currentUser));
   const canDelete = isAdmin || meeting.setter_id === currentUser?.id;
 
   useEffect(() => {
