@@ -7,12 +7,14 @@ import { Button } from "@/components/ui";
 import { CreateLeadModal } from "@/components/leads/CreateLeadModal";
 import { LeadBoardView } from "@/components/leads/LeadBoardView";
 import { LeadFiltersBar } from "@/components/leads/LeadFiltersBar";
+import { StageSettingsModal } from "@/components/leads/StageSettingsModal";
 import { LeadListView } from "@/components/leads/LeadListView";
 import { useApp } from "@/context/AppContext";
 import { analyticsApi, api, leadApi, settingsApi, type BoardQuery } from "@/lib/api";
 import { readStoredLeadsView, resolveLeadsView, storeLeadsView, type LeadsView } from "@/lib/leadsView";
 import type { LeadFilters, LeadListResponse, LeadSource, LeadStage, ServiceItem, UserWithStats } from "@/lib/types";
 import { EMPTY_LEAD_FILTERS } from "@/lib/types";
+import { isSalesHead } from "@/lib/roles";
 
 const LIMIT = 30;
 const TOGGLES = [
@@ -56,6 +58,7 @@ function LeadsPageInner() {
   const [createModal, setCreateModal] = useState(false);
   const [boardKey, setBoardKey] = useState(0);
   const [boardBusy, setBoardBusy] = useState(false);
+  const [stagesModal, setStagesModal] = useState(false);
 
   // Debounce typing so each keystroke does not hit the API.
   useEffect(() => {
@@ -160,6 +163,9 @@ function LeadsPageInner() {
               })}>
               Excel
             </Button>
+            {user && isSalesHead(user) && (
+              <Button variant="ghost" icon="settings" onClick={() => setStagesModal(true)}>Настроить этапы</Button>
+            )}
             <Button icon="add" disabled={boardBusy} onClick={() => setCreateModal(true)}>Новый лид</Button>
           </>
         }
@@ -184,6 +190,16 @@ function LeadsPageInner() {
           onRetry={() => load(offset)}
         />
       )}
+
+      <StageSettingsModal
+        open={stagesModal}
+        onClose={() => setStagesModal(false)}
+        onChanged={() => {
+          settingsApi.listStages().then(setStages).catch(() => {});
+          setBoardKey((k) => k + 1);
+          if (view === "list") load(0);
+        }}
+      />
 
       <CreateLeadModal
         open={createModal}

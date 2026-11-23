@@ -38,6 +38,8 @@ export interface LeadStage {
   is_archived: boolean;
   /** Source of truth for stage behaviour; never inferred from the name. */
   kind: StageKind;
+  /** Active leads on the stage; only present with `with_counts`. */
+  lead_count?: number;
 }
 
 export interface RejectReason {

@@ -275,10 +275,10 @@ export const settingsApi = {
   reorderService: (id: number, position: number) => request<import("./types").ServiceItem[]>(`/settings/services/${id}/reorder?new_position=${position}`, { method: "POST" }),
 
   // Stages — archived ones are excluded unless explicitly requested
-  listStages: (includeArchived = false) =>
-    request<import("./types").LeadStage[]>(
-      `/settings/stages${includeArchived ? "?include_archived=true" : ""}`,
-    ),
+  listStages: (includeArchived = false, withCounts = false) => {
+    const params = [includeArchived && "include_archived=true", withCounts && "with_counts=true"].filter(Boolean);
+    return request<import("./types").LeadStage[]>(`/settings/stages${params.length ? `?${params.join("&")}` : ""}`);
+  },
   archiveStage: (id: number) =>
     request<import("./types").LeadStage>(`/settings/stages/${id}/archive`, { method: "POST" }),
   createStage: (data: any) => request<import("./types").LeadStage>("/settings/stages", { method: "POST", body: JSON.stringify(data) }),
