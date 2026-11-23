@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { archiveTarget, archiveWarning, isServiceStage, reorderPosition } from "./stageSettings";
+import { archiveTarget, archiveWarning, blurActiveField, isServiceStage, reorderPosition, validStageFilter } from "./stageSettings";
 import type { LeadStage } from "./types";
 
 function st(id: number, over: Partial<LeadStage> = {}): LeadStage {
@@ -25,6 +25,14 @@ describe("archiveTarget", () => {
     const list = [st(1), st(2, { is_archived: true }), st(3, { is_lost: true, kind: "lost" }), st(4)];
     expect(archiveTarget(list, 1)?.id).toBe(4);
   });
+  it("prefers a generic stage over an earlier service stage", () => {
+    const list = [st(1, { kind: "meeting" }), st(2), st(3)];
+    expect(archiveTarget(list, 3)?.id).toBe(2);
+  });
+  it("falls back to a service stage when no generic one is left", () => {
+    const list = [st(1, { kind: "meeting" }), st(2)];
+    expect(archiveTarget(list, 2)?.id).toBe(1);
+  });
   it("null when nowhere to go", () => {
     expect(archiveTarget([st(1), st(2, { is_won: true })], 1)).toBeNull();
   });
@@ -46,4 +54,30 @@ describe("reorderPosition", () => {
   it("clamps drops on won/lost to the last movable stage", () => expect(reorderPosition(list, 1, 5)).toBe(3));
   it("pinned stages never move", () => expect(reorderPosition(list, 4, 1)).toBeNull());
   it("no-op on itself", () => expect(reorderPosition(list, 2, 2)).toBeNull());
+});
+
+describe("blurActiveField", () => {
+  it("blurs the focused field", () => {
+    let blurred = 0;
+    blurActiveField({ activeElement: { tagName: "INPUT", blur: () => { blurred++; } } });
+    expect(blurred).toBe(1);
+  });
+  it("ignores body / null", () => {
+    let blurred = 0;
+    blurActiveField({ activeElement: { tagName: "BODY", blur: () => { blurred++; } } });
+    blurActiveField({ activeElement: null });
+    expect(blurred).toBe(0);
+  });
+});
+
+describe("validStageFilter", () => {
+  const list = [st(1), st(2, { is_archived: true })];
+  it("keeps empty and active", () => {
+    expect(validStageFilter("", list)).toBe("");
+    expect(validStageFilter("1", list)).toBe("1");
+  });
+  it("resets archived or missing", () => {
+    expect(validStageFilter("2", list)).toBe("");
+    expect(validStageFilter("9", list)).toBe("");
+  });
 });

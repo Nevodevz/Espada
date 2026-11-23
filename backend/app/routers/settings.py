@@ -186,8 +186,9 @@ def create_stage(body: StageCreate, db: Session = Depends(get_db), user=Depends(
     idx = next((i for i, s in enumerate(stages) if s.kind in ("won", "lost") or s.is_won or s.is_lost), len(stages))
     r = LeadStage(name=body.name, position=idx, norm_days=body.norm_days, color=body.color)
     _set_kind(r, kind)
-    for i, s in enumerate(stages[idx:], start=idx + 1):
-        s.position = i
+    # Renumber densely so gaps in stored positions can never collide with the new row.
+    for i, s in enumerate(stages):
+        s.position = i if i < idx else i + 1
     db.add(r); db.commit(); db.refresh(r)
     return _serialize(r)
 
@@ -202,7 +203,7 @@ def update_stage(id: int, body: StageUpdate, db: Session = Depends(get_db), user
             or (body.is_lost is not None and body.is_lost != r.is_lost)
         ):
             _forbid("Тип этапа может менять только администратор")
-        if body.is_archived:
+        if body.is_archived is not None:
             _forbid("Для архивации используйте архивирование этапа")
     for field in ("name", "norm_days", "is_won", "is_lost", "color", "position", "is_archived"):
         val = getattr(body, field)
@@ -221,7 +222,7 @@ def update_stage(id: int, body: StageUpdate, db: Session = Depends(get_db), user
 def archive_stage(id: int, db: Session = Depends(get_db), user=Depends(require_stage_editor)):
     """Retire a stage without deleting it.
 
-    Leads still sitting on it are moved to the first active non-final stage, and
+    Leads still sitting on it are moved to the first active generic non-final stage (any non-final one if none), and
     each move is recorded in the lead's history so the trail stays readable.
     """
     from app.models import Lead, LeadStageHistory
@@ -234,7 +235,7 @@ def archive_stage(id: int, db: Session = Depends(get_db), user=Depends(require_s
     if stage.is_archived:
         return _serialize(stage)
 
-    target = (
+    candidates = (
         db.query(LeadStage)
         .filter(
             LeadStage.id != id,
@@ -243,8 +244,10 @@ def archive_stage(id: int, db: Session = Depends(get_db), user=Depends(require_s
             LeadStage.is_lost == False,      # noqa: E712
         )
         .order_by(LeadStage.position)
-        .first()
+        .all()
     )
+    # Prefer a plain stage so leads never land on a service stage (meeting, contract, ...).
+    target = next((s for s in candidates if s.kind == "generic"), candidates[0] if candidates else None)
     if target is None:
         raise HTTPException(422, "Нет активного этапа, куда перенести лиды")
 

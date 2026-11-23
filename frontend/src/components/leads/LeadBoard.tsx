@@ -94,7 +94,7 @@ function LeadCard({ card, stages, disabled, onDropCard }: {
   // Whole card is the drag activator; it is also the keyboard activator, so Enter on the inner link still navigates.
   return <article ref={(node) => { setNodeRef(node); setActivatorNodeRef(node); }} className="lead-board-card" data-lead-id={card.id}
     data-draggable={disabled ? undefined : "true"} style={{ opacity: isDragging ? 0.35 : 1 }}
-    aria-label={`Лид «${card.client_name}». Пробел — перетащить`} {...attributes} {...listeners}>
+    {...attributes} {...listeners} role="group" aria-roledescription="перетаскиваемая карточка">
     <div className="lead-board-card-tools">
       <span className="lead-board-handle" aria-hidden="true">
         <span className="material-symbols-outlined">drag_indicator</span>
@@ -207,7 +207,8 @@ export function LeadBoard({ data, disabled, onDropCard, showClosed = false, onTa
       .lead-board-card-tools { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
       .lead-board-action { min-width:0; flex:1; border:1px solid var(--border); border-radius:5px; padding:4px; background:var(--bg2); color:var(--text3); font-size:11px; }
       .lead-board-handle { display:flex; justify-content:center; align-items:center; background:none; border:0; color:var(--text3); padding:2px; border-radius:4px; cursor:grab; }
-      .lead-board-card[data-draggable] { cursor:grab; }
+      .lead-board-card[data-draggable] { cursor:grab; -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
+      .lead-board-card[data-draggable] input, .lead-board-card[data-draggable] select, .lead-board-card[data-draggable] textarea { -webkit-user-select:text; user-select:text; }
       .lead-board-handle .material-symbols-outlined { font-size:18px; }
       .lead-board-card:focus-visible { outline:2px solid var(--primary); }
       .lead-board-title-row { display:flex; align-items:flex-start; gap:8px; }

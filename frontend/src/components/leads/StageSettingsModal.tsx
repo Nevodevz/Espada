@@ -9,7 +9,7 @@ import { Button, Input } from "@/components/ui";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { useToast } from "@/context/ToastContext";
 import { settingsApi } from "@/lib/api";
-import { archiveTarget, archiveWarning, isPinnedStage, isServiceStage, reorderPosition } from "@/lib/stageSettings";
+import { archiveTarget, archiveWarning, blurActiveField, isPinnedStage, isServiceStage, reorderPosition } from "@/lib/stageSettings";
 import { STAGE_KIND_LABELS, type LeadStage } from "@/lib/types";
 
 const PALETTE = ["#4648d4", "#0ea5e9", "#10b981", "#84cc16", "#f59e0b", "#f97316", "#ef4444", "#a855f7"];
@@ -95,7 +95,6 @@ export function StageSettingsModal({ open, onClose, onChanged }: {
   const [stages, setStages] = useState<LeadStage[]>([]);
   const [busy, setBusy] = useState(false);
   const [newName, setNewName] = useState("");
-  const [changed, setChanged] = useState(false);
   const [resetToken, setResetToken] = useState(0);
   const [deleting, setDeleting] = useState<LeadStage | null>(null);
 
@@ -110,7 +109,6 @@ export function StageSettingsModal({ open, onClose, onChanged }: {
 
   useEffect(() => {
     if (!open) return;
-    setChanged(false);
     reload().catch((e) => toast(e.message || "Не удалось загрузить этапы", "error"));
   }, [open, reload, toast]);
 
@@ -118,7 +116,7 @@ export function StageSettingsModal({ open, onClose, onChanged }: {
     setBusy(true);
     try {
       await fn();
-      setChanged(true);
+      onChanged();
       if (ok) toast(ok, "success");
     } catch (e: any) {
       toast(e.message || "Ошибка", "error");
@@ -130,7 +128,8 @@ export function StageSettingsModal({ open, onClose, onChanged }: {
   }
 
   function close() {
-    if (changed) onChanged();
+    // Commit a half-typed rename first (blur → commit → run), otherwise Escape / «Готово» drop it.
+    blurActiveField(document);
     onClose();
   }
 

@@ -10,9 +10,24 @@ export function isPinnedStage(s: Pick<LeadStage, "is_won" | "is_lost">): boolean
   return s.is_won || s.is_lost;
 }
 
-/** Where leads of a removed stage go: first active non-won/lost stage (mirrors the backend). */
+/**
+ * Where leads of a removed stage go (mirrors the backend): the first active non-won/lost
+ * generic stage, falling back to any active non-won/lost stage.
+ */
 export function archiveTarget(stages: LeadStage[], id: number): LeadStage | null {
-  return stages.find((s) => s.id !== id && !s.is_archived && !s.is_won && !s.is_lost) ?? null;
+  const open = stages.filter((s) => s.id !== id && !s.is_archived && !s.is_won && !s.is_lost);
+  return open.find((s) => !isServiceStage(s)) ?? open[0] ?? null;
+}
+
+/** Blur the focused field so its onBlur commit runs before the surrounding window closes. */
+export function blurActiveField(doc: { activeElement: unknown }): void {
+  const el = doc.activeElement as { blur?: () => void; tagName?: string } | null;
+  if (el && typeof el.blur === "function" && el.tagName !== "BODY") el.blur();
+}
+
+/** Keep a stage filter only while that stage is still active. */
+export function validStageFilter(stageId: string, stages: Pick<LeadStage, "id" | "is_archived">[]): string {
+  return !stageId || stages.some((s) => String(s.id) === stageId && !s.is_archived) ? stageId : "";
 }
 
 export function archiveWarning(stage: LeadStage, target: LeadStage | null): string {

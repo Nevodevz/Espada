@@ -101,3 +101,48 @@ def test_stage_lead_counts(client, admin, stages, lead, db):
     assert counts["Созвон"] == 0
     plain = client.get("/api/settings/stages", headers=auth_headers(admin)).json()
     assert "lead_count" not in plain[0]
+
+
+def test_create_stage_with_gapped_positions(client, head, stages, db):
+    # Gaps, e.g. left behind by manual edits: 0, 5, 10, 20(won), 30(lost)
+    for name, pos in (("Новый лид", 0), ("Созвон", 5), ("Встреча", 10), ("Договор", 12),
+                      ("Ожидание оплаты", 15), ("Оплачено", 20), ("Минус", 30)):
+        stages[name].position = pos
+    db.commit()
+    r = client.post("/api/settings/stages", json={"name": "Между"}, headers=auth_headers(head))
+    assert r.status_code == 201, r.text
+    rows = client.get("/api/settings/stages", headers=auth_headers(head)).json()
+    assert sorted(s["position"] for s in rows) == list(range(len(rows)))
+    names = [s["name"] for s in sorted(rows, key=lambda s: s["position"])]
+    assert names.index("Между") == names.index("Оплачено") - 1
+
+
+def test_head_cannot_touch_is_archived_via_patch(client, head, admin, stages):
+    h = auth_headers(head)
+    sid = stages["Созвон"].id
+    assert client.patch(f"/api/settings/stages/{sid}", json={"is_archived": True}, headers=h).status_code == 422
+    # admin archives a service stage; head must not be able to bring it back
+    mid = stages["Встреча"].id
+    assert client.post(f"/api/settings/stages/{mid}/archive", headers=auth_headers(admin)).status_code == 200
+    assert client.patch(f"/api/settings/stages/{mid}", json={"is_archived": False}, headers=h).status_code == 422
+    rows = client.get("/api/settings/stages?include_archived=true", headers=h).json()
+    assert next(s for s in rows if s["id"] == mid)["is_archived"] is True
+
+
+def test_archive_prefers_generic_target(client, head, stages, db):
+    # First active non-final stage is a service one; generic must still win.
+    stages["Новый лид"].position = 3
+    stages["Договор"].position = 0
+    stages["Созвон"].is_archived = True
+    db.commit()
+    lead = Lead(client_name="К", phone="+996 700 000009", stage_id=stages["Новый лид"].id,
+                status=LeadStatus.active)
+    db.add(lead)
+    # archive a generic stage whose sibling generic stage is after a service one
+    extra = client.post("/api/settings/stages", json={"name": "Доп"}, headers=auth_headers(head)).json()
+    lead.stage_id = extra["id"]
+    db.commit()
+    r = client.post(f"/api/settings/stages/{extra['id']}/archive", headers=auth_headers(head))
+    assert r.status_code == 200, r.text
+    db.refresh(lead)
+    assert lead.stage_id == stages["Новый лид"].id

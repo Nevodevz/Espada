@@ -8,6 +8,7 @@ import { CreateLeadModal } from "@/components/leads/CreateLeadModal";
 import { LeadBoardView } from "@/components/leads/LeadBoardView";
 import { LeadFiltersBar } from "@/components/leads/LeadFiltersBar";
 import { StageSettingsModal } from "@/components/leads/StageSettingsModal";
+import { validStageFilter } from "@/lib/stageSettings";
 import { LeadListView } from "@/components/leads/LeadListView";
 import { useApp } from "@/context/AppContext";
 import { analyticsApi, api, leadApi, settingsApi, type BoardQuery } from "@/lib/api";
@@ -195,7 +196,13 @@ function LeadsPageInner() {
         open={stagesModal}
         onClose={() => setStagesModal(false)}
         onChanged={() => {
-          settingsApi.listStages().then(setStages).catch(() => {});
+          settingsApi.listStages().then((list) => {
+            setStages(list);
+            setFilters((f) => {
+              const stage_id = validStageFilter(String(f.stage_id ?? ""), list);
+              return stage_id === String(f.stage_id ?? "") ? f : { ...f, stage_id };
+            });
+          }).catch(() => {});
           setBoardKey((k) => k + 1);
           if (view === "list") load(0);
         }}
