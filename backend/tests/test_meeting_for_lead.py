@@ -103,3 +103,18 @@ def test_open_only_filter(client, db, admin, lead, stages):
     r = client.get("/api/leads?open_only=true&limit=100", headers=auth_headers(admin))
     names = {i["client_name"] for i in r.json()["items"]}
     assert names == {"Клиент", "БезЭтапа"}
+
+
+def test_stage_endpoint_ignores_client_meeting_datetime(client, db, admin, lead, other_staff, stages):
+    lead.stage_id = stages["Созвон"].id
+    db.commit()
+    r = client.patch(f"/api/leads/{lead.id}/stage", headers=auth_headers(admin), json={
+        "to_stage_id": stages["Встреча"].id,
+        "extra_data": {
+            "meeting_date": "2026-12-01", "meeting_time": "12:00",
+            "closer_id": other_staff.id, "meeting_datetime": "garbage",
+        },
+    })
+    assert r.status_code == 200, r.text
+    m = db.query(Meeting).filter_by(lead_id=lead.id).one()
+    assert m.meeting_date.replace(tzinfo=None).isoformat() == "2026-12-01T06:00:00"

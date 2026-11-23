@@ -65,6 +65,7 @@ def change_lead_stage(
     changed_by: int | None = None,
     comment: str = "",
     extra_data: dict | None = None,
+    meeting_dt: datetime | None = None,
 ) -> LeadStageHistory:
     extra_data = extra_data or {}
 
@@ -77,7 +78,7 @@ def change_lead_stage(
     # Side effects run BEFORE the stage is moved so a handler can veto the move.
     # `won` in particular must not close a deal that is only partially paid.
     if kind == "meeting":
-        _handle_meeting_stage(db, lead, changed_by, extra_data)
+        _handle_meeting_stage(db, lead, changed_by, extra_data, meeting_dt)
     elif kind == "contract":
         _handle_contract_stage(db, lead, changed_by, extra_data)
     elif kind == "waiting_payment":
@@ -182,18 +183,22 @@ def schedule_meeting_for_lead(
     return m
 
 
-def _handle_meeting_stage(db: Session, lead: Lead, changed_by: int | None, extra: dict) -> None:
+def _handle_meeting_stage(
+    db: Session, lead: Lead, changed_by: int | None, extra: dict, meeting_dt: datetime | None = None,
+) -> None:
     meeting_date_str = extra.get("meeting_date") or extra.get("date")
     meeting_time_str = extra.get("meeting_time") or extra.get("time", "00:00")
 
-    # A caller that already has an exact instant passes it as `meeting_datetime` (UTC-aware).
-    meeting_dt = extra.get("meeting_datetime") or datetime.now(timezone.utc)
-    if meeting_date_str and not extra.get("meeting_datetime"):
-        try:
-            local = datetime.fromisoformat(f"{meeting_date_str[:10]}T{meeting_time_str or '00:00'}:00")
-            meeting_dt = local.replace(tzinfo=BISHKEK_TZ).astimezone(timezone.utc)
-        except ValueError:
-            pass
+    # A server-side caller that already has an exact instant passes `meeting_dt`
+    # (never via `extra`, which carries client JSON).
+    if meeting_dt is None:
+        meeting_dt = datetime.now(timezone.utc)
+        if meeting_date_str:
+            try:
+                local = datetime.fromisoformat(f"{meeting_date_str[:10]}T{meeting_time_str or '00:00'}:00")
+                meeting_dt = local.replace(tzinfo=BISHKEK_TZ).astimezone(timezone.utc)
+            except ValueError:
+                pass
 
     try:
         duration = int(extra.get("duration_minutes") or 0) or None

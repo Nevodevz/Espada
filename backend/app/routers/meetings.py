@@ -160,8 +160,8 @@ def create_meeting(
         meeting_stage = db.query(LeadStage).filter(LeadStage.kind == "meeting").first()
         cur = db.get(LeadStage, lead.stage_id) if lead.stage_id else None
         if meeting_stage and (cur is None or cur.position < meeting_stage.position):
-            change_lead_stage(db, lead, meeting_stage.id, changed_by=user.id, extra_data={
-                "meeting_datetime": payload.meeting_date, "closer_id": payload.closer_id,
+            change_lead_stage(db, lead, meeting_stage.id, changed_by=user.id, meeting_dt=payload.meeting_date, extra_data={
+                "closer_id": payload.closer_id,
                 "setter_id": setter_id, "address": payload.address, "notes": payload.notes,
                 "duration_minutes": payload.duration_minutes,
             })
