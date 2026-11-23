@@ -28,3 +28,34 @@ def board_sort_key(lead: Lead, unread: int = 0, next_task=None) -> tuple:
     else:
         task_rank = 0 if next_task.overdue else 2
     return (0 if unread else 1, task_rank, -_ts(lead.updated_at or lead.created_at), -lead.id)
+
+
+CLOSED_KINDS = ("won", "lost")
+
+
+def apply_board_toggles(db, query, user, *, mine: bool = False, unassigned: bool = False,
+                        show_closed: bool = True):
+    """SQL-level quick toggles shared by the board and the list view."""
+    from sqlalchemy import or_
+
+    from app.models import LeadStage
+
+    if mine:
+        query = query.filter(or_(Lead.setter_id == user.id, Lead.closer_id == user.id))
+    if unassigned:
+        query = query.filter(Lead.setter_id.is_(None))
+    if not show_closed:
+        closed_ids = [s.id for s in db.query(LeadStage.id).filter(LeadStage.kind.in_(CLOSED_KINDS))]
+        if closed_ids:
+            query = query.filter(or_(Lead.stage_id.is_(None), Lead.stage_id.notin_(closed_ids)))
+    return query
+
+
+def task_state_matches(lead_id: int, next_tasks: dict, *, overdue: bool = False, no_task: bool = False) -> bool:
+    """Task-based toggles; `next_tasks` maps lead id → nearest open task (with `.overdue`)."""
+    task = next_tasks.get(lead_id)
+    if overdue and not (task is not None and task.overdue):
+        return False
+    if no_task and task is not None:
+        return False
+    return True

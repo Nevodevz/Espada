@@ -591,10 +591,16 @@ def list_leads(
     date_to: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
     open_only: bool = Query(False),
+    mine: bool = Query(False),
+    unassigned: bool = Query(False),
+    overdue: bool = Query(False),
+    no_task: bool = Query(False),
+    # Same meaning as on the board; the list keeps closed leads unless asked to hide them.
+    show_closed: bool = Query(True),
     limit: int = Query(30, le=100),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
     q = _eager_lead(db)
     q = _apply_list_filters(
@@ -607,6 +613,14 @@ def list_leads(
         closed = db.query(LeadStage.id).filter(LeadStage.is_won | LeadStage.is_lost)
         q = q.filter(Lead.status != LeadStatus.archived)
         q = q.filter(Lead.stage_id.is_(None) | Lead.stage_id.notin_(closed))
+    from app.services.lead_board import apply_board_toggles, task_state_matches
+    q = apply_board_toggles(db, q, user, mine=mine, unassigned=unassigned, show_closed=show_closed)
+    if overdue or no_task:
+        # Task state lives in another table; resolve it for all matches, then paginate.
+        candidate_ids = [row[0] for row in q.with_entities(Lead.id).all()]
+        nxt, _streaks = task_extras(db, candidate_ids)
+        kept = [i for i in candidate_ids if task_state_matches(i, nxt, overdue=overdue, no_task=no_task)]
+        q = q.filter(Lead.id.in_(kept))
 
     total = q.count()
     items = q.order_by(Lead.created_at.desc()).offset(offset).limit(limit).all()

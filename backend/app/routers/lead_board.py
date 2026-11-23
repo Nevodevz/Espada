@@ -16,13 +16,10 @@ from sqlalchemy import func
 
 from app.models import Lead, LeadStage, LeadStatus, Meeting, MeetingStatus, User, WhatsAppChat
 from app.routers.leads import LeadOut, ScheduledMeetingOut, task_extras, _apply_list_filters, _deals_by_lead, _eager_lead, _lead_out
-from app.services.lead_board import board_sort_key
+from app.services.lead_board import apply_board_toggles, board_sort_key, task_state_matches
 from app.services.leads import active_stages
 
 router = APIRouter(prefix="/api/lead-board", tags=["lead-board"])
-
-CLOSED_KINDS = ("won", "lost")
-
 
 class StageOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -98,23 +95,14 @@ def get_board(
         date_from=date_from.isoformat() if date_from else None,
         date_to=date_to.isoformat() if date_to else None,
     ).filter(Lead.status == LeadStatus.active)
-    if mine:
-        query = query.filter(or_(Lead.setter_id == user.id, Lead.closer_id == user.id))
-    if unassigned:
-        query = query.filter(Lead.setter_id.is_(None))
-    if not show_closed:
-        closed_ids = [s.id for s in db.query(LeadStage.id).filter(LeadStage.kind.in_(CLOSED_KINDS))]
-        if closed_ids:
-            query = query.filter(or_(Lead.stage_id.is_(None), Lead.stage_id.notin_(closed_ids)))
+    query = apply_board_toggles(db, query, user, mine=mine, unassigned=unassigned, show_closed=show_closed)
 
     rows = query.all()
     ids = [lead.id for lead in rows]
     unread = _unread_by_lead(db, ids)
     nxt, streaks = task_extras(db, ids)
-    if overdue:
-        rows = [lead for lead in rows if lead.id in nxt and nxt[lead.id].overdue]
-    if no_task:
-        rows = [lead for lead in rows if lead.id not in nxt]
+    if overdue or no_task:
+        rows = [lead for lead in rows if task_state_matches(lead.id, nxt, overdue=overdue, no_task=no_task)]
     leads = sorted(rows, key=lambda lead: board_sort_key(lead, unread.get(lead.id, 0), nxt.get(lead.id)))
     deals = _deals_by_lead(db, [lead.id for lead in leads])
     meetings = _scheduled_meetings(db, [lead.id for lead in leads])

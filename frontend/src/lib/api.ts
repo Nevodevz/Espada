@@ -341,6 +341,14 @@ export function boardQueryString(query?: BoardQuery): string {
   return qs ? "?" + qs : "";
 }
 
+/** List query: like the board's, but `show_closed=false` is sent explicitly (the list shows closed leads by default). */
+export function listQueryString(query?: BoardQuery): string {
+  const p = new URLSearchParams(boardQueryString(query).replace(/^\?/, ""));
+  if (query?.show_closed === false) p.set("show_closed", "false");
+  const qs = p.toString();
+  return qs ? "?" + qs : "";
+}
+
 export const leadBoardApi = {
   get: (query?: BoardQuery) => request<import("./types").LeadBoardData>(`/lead-board${boardQueryString(query)}`),
 };
@@ -353,8 +361,8 @@ export const leadApi = {
     const qs = p.toString();
     return request<import("./types").LeadStats>(`/leads/stats${qs ? "?" + qs : ""}`);
   },
-  list: (f?: LeadQuery) =>
-    request<import("./types").LeadListResponse>(`/leads${leadQueryString(f)}`),
+  list: (f?: BoardQuery) =>
+    request<import("./types").LeadListResponse>(`/leads${listQueryString(f)}`),
   get: (id: number) => request<import("./types").LeadDetail>(`/leads/${id}`),
   create: (data: any) => request<import("./types").Lead>("/leads", { method: "POST", body: JSON.stringify(data) }),
   update: (id: number, data: any) => request<import("./types").Lead>(`/leads/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
