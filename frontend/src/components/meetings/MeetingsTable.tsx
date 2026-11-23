@@ -4,25 +4,12 @@ import { useCallback, useEffect, useState } from "react";
 import { MeetingDetailModal } from "@/components/meetings/MeetingDetailModal";
 import { closerOptions, isCloser } from "@/lib/roles";
 import { meetingApi } from "@/lib/api";
+import { bishkekDayBoundsUtc, meetingsPeriodRange } from "@/lib/meetingSlots";
 import {
   Meeting, MeetingStatus, MEETING_STATUS, MEETING_STATUS_KEYS, UserWithStats,
 } from "@/lib/types";
 import { Select, DateRangePicker } from "@/components/ui";
 
-
-function periodRange(period: "day" | "week" | "month"): { from: string; to: string } {
-  const now = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const iso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  if (period === "day") { const t = iso(now); return { from: t, to: t }; }
-  if (period === "week") {
-    const dow = now.getDay() === 0 ? 6 : now.getDay() - 1;
-    const mon = new Date(now); mon.setDate(now.getDate() - dow);
-    const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
-    return { from: iso(mon), to: iso(sun) };
-  }
-  return { from: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`, to: iso(now) };
-}
 
 // ISO UTC string → "YYYY-MM-DDTHH:MM" in Bishkek (+6h)
 function utcToLocal(s: string): string {
@@ -67,9 +54,13 @@ export function MeetingsTable({ allUsers, initUser = null, currentUser, isAdmin,
   const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
   const LIMIT = 100;
 
-  const { from, to } = period === "custom"
-    ? { from: customFrom, to: customTo }
-    : periodRange(period);
+  // The API compares against UTC instants: send the bounds of whole Bishkek days.
+  const { date_from: from, date_to: to } = period === "custom"
+    ? {
+        date_from: customFrom ? bishkekDayBoundsUtc(customFrom, customFrom).date_from : "",
+        date_to: customTo ? bishkekDayBoundsUtc(customTo, customTo).date_to : "",
+      }
+    : meetingsPeriodRange(period);
 
   function handleRoleChange(r: "setter" | "closer" | "all") {
     setFilterRole(r);

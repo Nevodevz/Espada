@@ -5,6 +5,7 @@ import type {
 } from "./types";
 
 import { readStoredValue } from "./storage";
+import { apiErrorMessage } from "./apiError";
 
 const TOKEN_KEY = "espada_token";
 const LEGACY_TOKEN_KEY = "nevodevs_token";
@@ -41,7 +42,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: "Ошибка запроса" }));
-    throw Object.assign(new Error(err.detail || `HTTP ${res.status}`), { status: res.status });
+    // `detail` stays on the error: a 409 on POST /leads carries the existing lead.
+    throw Object.assign(new Error(apiErrorMessage(err?.detail, res.status)), { status: res.status, detail: err?.detail });
   }
   if (res.status === 204) return undefined as T;
   return res.json();

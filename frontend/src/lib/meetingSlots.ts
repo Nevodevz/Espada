@@ -43,3 +43,56 @@ export function daySlots(meetings: MeetingLike[], day: string): DaySlot[] {
   }
   return slots;
 }
+
+/** Shift a `YYYY-MM-DD` date by whole days. */
+export function shiftDay(day: string, delta: number): string {
+  const d = new Date(`${day}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * `meetingApi.list` filter for a closer's slots on one Bishkek day. Sub-meetings
+ * are included (a reschedule child holds the real new time), and the neighbouring
+ * UTC dates are fetched because a Bishkek day spans two of them; `daySlots`
+ * then keeps only the requested day.
+ */
+export function closerDayQuery(closerId: number, day: string) {
+  return {
+    closer_id: closerId, date_from: shiftDay(day, -1), date_to: shiftDay(day, 1),
+    limit: 500, parent_only: false as const,
+  };
+}
+
+const BISHKEK_OFFSET_MS = 6 * 3600 * 1000;
+
+/** UTC instants (ISO, `Z`) covering Bishkek days `from`..`to` inclusive. */
+export function bishkekDayBoundsUtc(from: string, to: string): { date_from: string; date_to: string } {
+  const start = Date.parse(`${from}T00:00:00Z`) - BISHKEK_OFFSET_MS;
+  const end = Date.parse(`${shiftDay(to, 1)}T00:00:00Z`) - BISHKEK_OFFSET_MS - 1;
+  return { date_from: new Date(start).toISOString(), date_to: new Date(end).toISOString() };
+}
+
+/**
+ * Bishkek-calendar period around `now`: today, this Monday..Sunday, or the whole
+ * calendar month. `from`/`to` are Bishkek dates; `date_from`/`date_to` are the
+ * UTC instants to send to the API.
+ */
+export function meetingsPeriodRange(
+  period: "day" | "week" | "month", now: Date = new Date(),
+): { from: string; to: string; date_from: string; date_to: string } {
+  const today = new Date(now.getTime() + BISHKEK_OFFSET_MS).toISOString().slice(0, 10);
+  let from = today;
+  let to = today;
+  if (period === "week") {
+    const dow = (new Date(`${today}T00:00:00Z`).getUTCDay() + 6) % 7; // Monday = 0
+    from = shiftDay(today, -dow);
+    to = shiftDay(from, 6);
+  } else if (period === "month") {
+    const [y, mo] = today.split("-").map(Number);
+    from = `${today.slice(0, 7)}-01`;
+    const last = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+    to = `${today.slice(0, 7)}-${pad(last)}`;
+  }
+  return { from, to, ...bishkekDayBoundsUtc(from, to) };
+}

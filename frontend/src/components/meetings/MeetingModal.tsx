@@ -7,6 +7,7 @@ import { Button, FormField, Input, Select, Textarea } from "@/components/ui";
 import { useApp } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";
 import { api, leadApi, meetingApi } from "@/lib/api";
+import { existingLeadFromError } from "@/lib/apiError";
 import { bishkekDateTimeParts, localInputToUtc, utcToLocalInput } from "@/lib/format";
 import { createMeetingForClient, meetingFormFromLead } from "@/lib/meetingForm";
 import type { Lead, Meeting, UserWithStats } from "@/lib/types";
@@ -40,6 +41,8 @@ export function MeetingModal({
   const [newClientText, setNewClientText] = useState<string | null>(null);
   /** Open meeting of the picked lead — the backend reschedules it instead of adding a second one. */
   const [moved, setMoved] = useState<{ id: number; label: string } | null>(null);
+  /** A typed-in new client whose phone already belongs to a lead (POST /leads → 409). */
+  const [duplicate, setDuplicate] = useState<{ id: number; client_name: string } | null>(null);
   const [users, setUsers] = useState<UserWithStats[]>([]);
   const [form, setForm] = useState({
     closer_id: "", setter_id: "", meeting_date: "", address: "",
@@ -60,6 +63,7 @@ export function MeetingModal({
     setPickedLeadId(null);
     setNewClientText(null);
     setMoved(null);
+    setDuplicate(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, defaultStart]);
 
@@ -76,6 +80,7 @@ export function MeetingModal({
     setPickedLeadId(f.lead_id);
     setNewClientText(null);
     setMoved(null);
+    setDuplicate(null);
     setForm((prev) => ({
       ...prev,
       client_name: f.client_name,
@@ -93,6 +98,7 @@ export function MeetingModal({
   function pickNew(text: string) {
     setPickedLeadId(null);
     setMoved(null);
+    setDuplicate(null);
     setNewClientText(text);
     setForm((prev) => ({
       ...prev, client_name: text, client_phone: "",
@@ -104,6 +110,7 @@ export function MeetingModal({
     setPickedLeadId(null);
     setNewClientText(null);
     setMoved(null);
+    setDuplicate(null);
     setForm((prev) => ({ ...prev, client_name: "", client_phone: "", setter_id: "" }));
   }
 
@@ -136,10 +143,17 @@ export function MeetingModal({
       onClose();
       onSaved(created);
     } catch (e: unknown) {
+      const existing = existingLeadFromError(e);
+      if (existing) setDuplicate(existing);
       toast((e as Error).message, "error");
     } finally {
       setSaving(false);
     }
+  }
+
+  function pickDuplicate() {
+    if (!duplicate) return;
+    leadApi.get(duplicate.id).then(pickLead).catch((e: unknown) => toast((e as Error).message, "error"));
   }
 
   return (
@@ -180,6 +194,19 @@ export function MeetingModal({
               Встреча уже назначена на {moved.label} — она будет перенесена.
             </div>
           )}
+          {duplicate && (
+            <div role="alert" style={{ fontSize: 12, color: "var(--text2)", marginTop: 6 }}>
+              Лид с таким номером уже есть{duplicate.client_name ? `: ${duplicate.client_name}` : ""}.{" "}
+              <button type="button" onClick={pickDuplicate}
+                style={{ border: "none", background: "none", padding: 0, color: "var(--accent)", cursor: "pointer", fontFamily: "inherit", fontSize: 12, textDecoration: "underline" }}>
+                Выбрать его
+              </button>
+              {" · "}
+              <a href={`/leads/${duplicate.id}`} target="_blank" rel="noreferrer" style={{ color: "var(--accent)" }}>
+                Открыть
+              </a>
+            </div>
+          )}
         </FormField>
       ) : (
         <FormField label="Имя клиента" required>
@@ -188,7 +215,11 @@ export function MeetingModal({
       )}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px" }}>
         <FormField label="Телефон">
-          <Input value={form.client_phone} onChange={set("client_phone")} placeholder="+996 700 000000" />
+          {/* A picked lead's phone is taken from the lead on the server — show it, don't let it be edited. */}
+          <Input value={form.client_phone} onChange={set("client_phone")} placeholder="+996 700 000000"
+            readOnly={pickMode && pickedLeadId !== null}
+            title={pickMode && pickedLeadId !== null ? "Телефон берётся из карточки лида" : undefined}
+            style={pickMode && pickedLeadId !== null ? { background: "var(--bg3)", color: "var(--text2)" } : undefined} />
         </FormField>
         <FormField label="Продолжительность">
           <Select value={form.duration_minutes} onChange={set("duration_minutes")}>

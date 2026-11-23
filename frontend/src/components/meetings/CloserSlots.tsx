@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { meetingApi } from "@/lib/api";
-import { daySlots } from "@/lib/meetingSlots";
+import { closerDayQuery, daySlots } from "@/lib/meetingSlots";
 import type { Meeting } from "@/lib/types";
 
 interface CloserSlotsProps {
@@ -16,12 +16,6 @@ interface CloserSlotsProps {
   excludeMeetingId?: number | null;
 }
 
-function shiftDay(day: string, delta: number): string {
-  const d = new Date(`${day}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + delta);
-  return d.toISOString().slice(0, 10);
-}
-
 export function CloserSlots({ closerId, day, value, onPick, excludeMeetingId }: CloserSlotsProps) {
   const [meetings, setMeetings] = useState<Meeting[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -30,10 +24,9 @@ export function CloserSlots({ closerId, day, value, onPick, excludeMeetingId }: 
     let cancelled = false;
     setMeetings(null);
     setFailed(false);
-    // The API compares date_from/date_to against UTC instants, and a Bishkek day
-    // spans two UTC dates — fetch the neighbours too; daySlots filters by Bishkek day.
+    // Neighbouring UTC days and sub-meetings included — see closerDayQuery.
     meetingApi
-      .list({ closer_id: closerId, date_from: shiftDay(day, -1), date_to: shiftDay(day, 1), limit: 500 })
+      .list(closerDayQuery(closerId, day))
       .then((r) => { if (!cancelled) setMeetings(r); })
       .catch(() => { if (!cancelled) setFailed(true); });
     return () => { cancelled = true; };
