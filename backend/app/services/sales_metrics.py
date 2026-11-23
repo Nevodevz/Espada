@@ -103,7 +103,7 @@ def totals(db: Session, date_from: date, date_to: date, source_id=None, service_
     won = sum(1 for l in leads if l.stage_id in won_ids)
     conversion = round(won / len(leads) * 100, 1) if leads else 0.0
 
-    # Money: latest deal of each still-open lead of the period (as in /api/leads/stats).
+    # Money: latest deal of each still-open lead created in the period (funnel-stats semantics).
     open_ids = [l.id for l in leads if l.stage_id not in won_ids and l.stage_id not in lost_ids]
     amount = paid = 0
     for deal in latest_deal_by_lead(db, open_ids).values():

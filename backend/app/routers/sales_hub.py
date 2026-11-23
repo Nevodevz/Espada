@@ -18,7 +18,7 @@ router = APIRouter(prefix="/api/sales-hub", tags=["sales-hub"])
 
 @router.get("/today")
 def today(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if not is_sales_staff(db, user):
+    if not (is_sales_head(user) or is_sales_staff(db, user)):
         raise HTTPException(403, "Только для сотрудников продаж")
     return {"unclaimed": unclaimed_leads(db), "awaiting_reply": awaiting_reply(db, user)}
 
@@ -33,8 +33,10 @@ def metrics(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    if not is_sales_staff(db, user):
+    if not (is_sales_head(user) or is_sales_staff(db, user)):
         raise HTTPException(403, "Только для сотрудников продаж")
+    if not is_sales_head(user) and user_id is not None and user_id != user.id:
+        raise HTTPException(403, "Можно смотреть только свои показатели")
     if date_to < date_from:
         raise HTTPException(422, "date_to раньше date_from")
     charts = analytics.charts_data(db, date_from, date_to)

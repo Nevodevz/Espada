@@ -165,3 +165,24 @@ def test_totals_money_and_conversion(db, stages, staff):
     t = totals(db, D1, D2)
     assert t["leads"] == 2 and t["conversion_pct"] == 50.0
     assert (t["deals_amount"], t["paid"], t["remaining"]) == (100, 40, 60)
+
+
+def test_staff_cannot_filter_by_other_user(db, client, sales, staff, other_staff):
+    q = "?date_from=2026-11-01&date_to=2026-11-30&user_id="
+    assert client.get(f"/api/sales-hub/metrics{q}{other_staff.id}", headers=auth_headers(staff)).status_code == 403
+    assert client.get(f"/api/sales-hub/metrics{q}{staff.id}", headers=auth_headers(staff)).status_code == 200
+
+
+def test_position_head_outside_sales_dept_sees_all(db, client, staff, other_staff, lead):
+    from app.core.security import hash_password
+    from app.models import Role, User
+    head = User(name="РП", email="rp@test.kg", password_hash=hash_password("x"), role=Role.staff,
+                position="Руководитель продаж", is_active=True)
+    db.add(head)
+    db.commit()
+    act(db, lead, staff, NOON)
+    act(db, lead, other_staff, NOON)
+    h = auth_headers(head)
+    r = client.get("/api/sales-hub/metrics?date_from=2026-11-01&date_to=2026-11-30", headers=h)
+    assert r.status_code == 200 and len(r.json()["employees"]["setters"]) == 2
+    assert client.get("/api/sales-hub/today", headers=h).status_code == 200
