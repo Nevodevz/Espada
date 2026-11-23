@@ -39,7 +39,7 @@ function MeetingsPageInner() {
   const ready = !!user && !!dept;
 
   return (
-    <Shell title="Встречи">
+    <Shell title="Отдел продаж">
       <div className="page-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <div className="page-h1">Встречи</div>
         <div style={{ display: "flex", gap: 4, background: "var(--bg3)", borderRadius: 8, padding: 3 }}>
@@ -71,5 +71,5 @@ function MeetingsPageInner() {
 }
 
 export default function MeetingsPage() {
-  return <Suspense fallback={<Shell title="Встречи"><div style={{ padding: 30 }}>Загрузка…</div></Shell>}><MeetingsPageInner /></Suspense>;
+  return <Suspense fallback={<Shell title="Отдел продаж"><div style={{ padding: 30 }}>Загрузка…</div></Shell>}><MeetingsPageInner /></Suspense>;
 }

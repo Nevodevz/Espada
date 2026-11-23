@@ -14,9 +14,11 @@ import { STAGE_KIND_LABELS, type LeadStage } from "@/lib/types";
 
 const PALETTE = ["#4648d4", "#0ea5e9", "#10b981", "#84cc16", "#f59e0b", "#f97316", "#ef4444", "#a855f7"];
 
-function StageRow({ stage, busy, onRename, onColor, onDelete }: {
+function StageRow({ stage, busy, resetToken, onRename, onColor, onDelete }: {
   stage: LeadStage;
   busy: boolean;
+  /** Bumped after a failed save so the field drops rejected text. */
+  resetToken: number;
   onRename: (name: string) => void;
   onColor: (color: string) => void;
   onDelete: () => void;
@@ -24,7 +26,7 @@ function StageRow({ stage, busy, onRename, onColor, onDelete }: {
   const pinned = isPinnedStage(stage);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: stage.id, disabled: pinned });
   const [name, setName] = useState(stage.name);
-  useEffect(() => setName(stage.name), [stage.name]);
+  useEffect(() => setName(stage.name), [stage.name, resetToken]);
 
   function commit() {
     const next = name.trim();
@@ -94,6 +96,7 @@ export function StageSettingsModal({ open, onClose, onChanged }: {
   const [busy, setBusy] = useState(false);
   const [newName, setNewName] = useState("");
   const [changed, setChanged] = useState(false);
+  const [resetToken, setResetToken] = useState(0);
   const [deleting, setDeleting] = useState<LeadStage | null>(null);
 
   const sensors = useSensors(
@@ -119,6 +122,7 @@ export function StageSettingsModal({ open, onClose, onChanged }: {
       if (ok) toast(ok, "success");
     } catch (e: any) {
       toast(e.message || "Ошибка", "error");
+      setResetToken((n) => n + 1);
     } finally {
       try { await reload(); } catch { /* keep the list we have */ }
       setBusy(false);
@@ -154,6 +158,7 @@ export function StageSettingsModal({ open, onClose, onChanged }: {
             {stages.map((s) => (
               <StageRow
                 key={s.id} stage={s} busy={busy}
+                resetToken={resetToken}
                 onRename={(name) => run(() => settingsApi.updateStage(s.id, { name }))}
                 onColor={(color) => run(() => settingsApi.updateStage(s.id, { color }))}
                 onDelete={() => setDeleting(s)}

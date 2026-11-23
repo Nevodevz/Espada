@@ -3,10 +3,11 @@
 import { createContext, useContext, useState } from "react";
 import Link from "next/link";
 import {
-  DndContext, DragOverlay, PointerSensor, KeyboardSensor, useSensor, useSensors,
+  DndContext, DragOverlay, MouseSensor, TouchSensor, KeyboardSensor, useSensor, useSensors,
   pointerWithin, closestCenter, useDraggable, useDroppable,
   type CollisionDetection, type DragEndEvent,
 } from "@dnd-kit/core";
+import type { MouseEvent as ReactMouseEvent, TouchEvent as ReactTouchEvent } from "react";
 import { Button } from "@/components/ui";
 import { StageActionMenu } from "./StageActionMenu";
 import { cardsForStage, cardsWithoutColumn, splitStages } from "./lead-board-layout";
@@ -23,6 +24,24 @@ interface Props {
   showClosed?: boolean;
   /** «Взять себе» on a card without a setter (shown only when provided). */
   onTake?: (card: LeadBoardCard) => void;
+}
+
+/** Links, buttons and form controls inside a card keep their own click behaviour and never start a drag. */
+const INTERACTIVE = "a, button, input, select, textarea, [role='menu'], [role='menuitem']";
+function isInteractive(target: EventTarget | null) {
+  return target instanceof Element && target.closest(INTERACTIVE) !== null;
+}
+class CardMouseSensor extends MouseSensor {
+  static activators = [{
+    eventName: "onMouseDown" as const,
+    handler: ({ nativeEvent }: ReactMouseEvent) => !isInteractive(nativeEvent.target) && nativeEvent.button === 0,
+  }];
+}
+class CardTouchSensor extends TouchSensor {
+  static activators = [{
+    eventName: "onTouchStart" as const,
+    handler: ({ nativeEvent }: ReactTouchEvent) => !isInteractive(nativeEvent.target) && nativeEvent.touches.length === 1,
+  }];
 }
 
 const TakeContext = createContext<Props["onTake"]>(undefined);
@@ -72,12 +91,14 @@ function LeadCard({ card, stages, disabled, onDropCard }: {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, isDragging } = useDraggable({
     id: `lead-${card.id}`, disabled, data: { leadId: card.id },
   });
-  return <article ref={setNodeRef} className="lead-board-card" data-lead-id={card.id} style={{ opacity: isDragging ? 0.35 : 1 }}>
+  // Whole card is the drag activator; it is also the keyboard activator, so Enter on the inner link still navigates.
+  return <article ref={(node) => { setNodeRef(node); setActivatorNodeRef(node); }} className="lead-board-card" data-lead-id={card.id}
+    data-draggable={disabled ? undefined : "true"} style={{ opacity: isDragging ? 0.35 : 1 }}
+    aria-label={`Лид «${card.client_name}». Пробел — перетащить`} {...attributes} {...listeners}>
     <div className="lead-board-card-tools">
-      <button ref={setActivatorNodeRef} className="lead-board-handle" disabled={disabled}
-        aria-label={`Перетащить лид «${card.client_name}»`} title="Перетащить лид" {...attributes} {...listeners}>
+      <span className="lead-board-handle" aria-hidden="true">
         <span className="material-symbols-outlined">drag_indicator</span>
-      </button>
+      </span>
       <StageActionMenu currentStageId={card.stage_id} stages={stages} disabled={disabled}
         label={`Перевести лид «${card.client_name}»`} onSelect={(stage) => onDropCard(card, stage)} />
     </div>
@@ -133,7 +154,11 @@ function DropZone({ stage, count, disabled }: { stage: LeadStage; count: number;
 
 export function LeadBoard({ data, disabled, onDropCard, showClosed = false, onTake }: Props) {
   const [activeCard, setActiveCard] = useState<LeadBoardCard | null>(null);
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 7 } }), useSensor(KeyboardSensor));
+  const sensors = useSensors(
+    useSensor(CardMouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(CardTouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
+    useSensor(KeyboardSensor),
+  );
   const split = splitStages(data.stages);
   const allStages = [...split.columns, ...split.dropZones];
   const columns = showClosed ? allStages : split.columns;
@@ -181,9 +206,10 @@ export function LeadBoard({ data, disabled, onDropCard, showClosed = false, onTa
       .lead-board-card { padding:12px; border:1px solid var(--border); border-radius:10px; background:var(--bg2); box-shadow:var(--shadow-sm); color:var(--text); }
       .lead-board-card-tools { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
       .lead-board-action { min-width:0; flex:1; border:1px solid var(--border); border-radius:5px; padding:4px; background:var(--bg2); color:var(--text3); font-size:11px; }
-      .lead-board-handle { display:flex; justify-content:center; align-items:center; background:none; border:0; color:var(--text3); padding:2px; border-radius:4px; cursor:grab; touch-action:none; }
+      .lead-board-handle { display:flex; justify-content:center; align-items:center; background:none; border:0; color:var(--text3); padding:2px; border-radius:4px; cursor:grab; }
+      .lead-board-card[data-draggable] { cursor:grab; }
       .lead-board-handle .material-symbols-outlined { font-size:18px; }
-      .lead-board-handle:focus-visible { outline:2px solid var(--primary); }
+      .lead-board-card:focus-visible { outline:2px solid var(--primary); }
       .lead-board-title-row { display:flex; align-items:flex-start; gap:8px; }
       .lead-board-title-row .lead-board-title { flex:1; }
       .lead-board-unread { flex-shrink:0; border-radius:10px; padding:1px 7px; background:var(--green); color:#fff; font-size:11px; font-weight:600; }

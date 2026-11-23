@@ -19,7 +19,7 @@ const FINANCE_SLUG = "finance";
 // Sales module: four screens (spec §4). Each item owns its whole path prefix,
 // so /leads/123 lights «Лиды» and /sales/meetings?view=table lights «Встречи».
 const SALES_SUBNAV = [
-  { href: "/sales/today",    icon: "wb_sunny",    label: "Сегодня" },
+  { href: "/sales/today",    icon: "task_alt",     label: "Мои задачи" },
   { href: "/leads",          icon: "view_kanban", label: "Лиды" },
   { href: "/sales/meetings", icon: "event",       label: "Встречи" },
   { href: "/sales/metrics",  icon: "bar_chart",   label: "Показатели" },

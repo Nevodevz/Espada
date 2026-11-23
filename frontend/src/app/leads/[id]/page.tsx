@@ -188,7 +188,7 @@ export default function LeadDetailPage() {
       || (salesId !== undefined && u.department_ids?.includes(salesId))));
   }, [users, departments]);
 
-  if (loading) return <Shell title="Лид"><div style={{ padding: 40, color: "var(--text3)", textAlign: "center" }}>Загрузка…</div></Shell>;
+  if (loading) return <Shell title="Отдел продаж"><div style={{ padding: 40, color: "var(--text3)", textAlign: "center" }}>Загрузка…</div></Shell>;
   if (!lead) return null;
 
   const activeStages = stages.filter((s) => !s.is_archived);
@@ -404,7 +404,7 @@ export default function LeadDetailPage() {
   );
 
   return (
-    <Shell title={lead.client_name}>
+    <Shell title="Отдел продаж">
       {card}
       <div className="lead-layout">
         <div className="lead-col-right">{right}</div>

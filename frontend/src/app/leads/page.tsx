@@ -125,7 +125,7 @@ function LeadsPageInner() {
   }
 
   return (
-    <Shell title="Лиды">
+    <Shell title="Отдел продаж">
       <div className="page-head" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
         <div>
           <div className="page-h1">Лиды</div>
@@ -219,7 +219,7 @@ function LeadsPageInner() {
 export default function LeadsPage() {
   // useSearchParams needs a Suspense boundary during static rendering.
   return (
-    <Suspense fallback={<Shell title="Лиды"><div style={{ padding: 40, color: "var(--text3)" }}>Загрузка…</div></Shell>}>
+    <Suspense fallback={<Shell title="Отдел продаж"><div style={{ padding: 40, color: "var(--text3)" }}>Загрузка…</div></Shell>}>
       <LeadsPageInner />
     </Suspense>
   );

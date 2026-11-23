@@ -75,14 +75,14 @@ export default function SalesMetricsPage() {
 
   if (denied) {
     return (
-      <Shell title="Показатели">
+      <Shell title="Отдел продаж">
         <Card padding="24px" style={{ color: "var(--text3)", textAlign: "center" }}>Раздел доступен только сотрудникам отдела продаж.</Card>
       </Shell>
     );
   }
 
   return (
-    <Shell title="Показатели">
+    <Shell title="Отдел продаж">
       <div className="page-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
         <div>
           <div className="page-h1">Показатели</div>

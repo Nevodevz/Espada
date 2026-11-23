@@ -43,7 +43,7 @@ export default function TodayPage() {
   };
 
   return (
-    <Shell title="Сегодня">
+    <Shell title="Отдел продаж">
       <div className="today-grid">
         <div><Suspense fallback={<div style={{ padding: 30 }}>Загрузка…</div>}><MyTasksBlock /></Suspense></div>
         {data && (
