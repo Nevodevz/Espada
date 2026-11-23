@@ -307,6 +307,8 @@ export interface LeadQuery {
   setter_id?: number | string; closer_id?: number | string;
   stage_id?: number | string; status?: string;
   date_from?: string; date_to?: string; search?: string;
+  /** Only leads a meeting can still be booked for: not archived, not won/lost. */
+  open_only?: boolean;
   limit?: number; offset?: number;
 }
 
@@ -324,6 +326,7 @@ function leadQueryString(f?: LeadQuery): string {
     const v = f?.[key];
     if (v !== undefined && v !== null && v !== "") p.set(key, String(v));
   }
+  if (f?.open_only) p.set("open_only", "true");
   if (f?.limit !== undefined) p.set("limit", String(f.limit));
   if (f?.offset) p.set("offset", String(f.offset));
   const qs = p.toString();
@@ -529,7 +532,7 @@ export const meetingApi = {
     return request<import("./types").Meeting[]>(`/meetings${qs ? "?" + qs : ""}`);
   },
   get: (id: number) => request<import("./types").Meeting>(`/meetings/${id}`),
-  create: (data: any) => request<import("./types").Meeting>("/meetings", { method: "POST", body: JSON.stringify(data) }),
+  create: (data: { setter_id?: number | null; [k: string]: any }) => request<import("./types").Meeting>("/meetings", { method: "POST", body: JSON.stringify(data) }),
   update: (id: number, data: any) => request<import("./types").Meeting>(`/meetings/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   setStatus: (id: number, status: string) => request<import("./types").Meeting>(`/meetings/${id}/status?status=${status}`, { method: "PATCH" }),
   delete: (id: number) => request<void>(`/meetings/${id}`, { method: "DELETE" }),
