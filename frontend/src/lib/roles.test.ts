@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { closerOptions, isCloser } from "./roles";
+import { closerOptions, isCloser, isSalesHead } from "./roles";
 
 const u = (id: number, name: string, is_closer: boolean, is_active = true) =>
   ({ id, name, is_closer, is_active }) as any;
@@ -18,5 +18,20 @@ describe("closers", () => {
     const list = [u(1, "Марлен", true), u(2, "Адахан", true), u(3, "Рахима", false), u(4, "Старый", true, false)];
     expect(closerOptions(list).map((x) => x.id)).toEqual([2, 1]);
     expect(closerOptions(list, 3).map((x) => x.id)).toEqual([2, 1, 3]);
+  });
+});
+
+describe("isSalesHead", () => {
+  it("accepts the sales head position", () => {
+    expect(isSalesHead({ role: "staff", is_founder: false, position: "Руководитель продаж" })).toBe(true);
+  });
+
+  it("accepts admins and founders", () => {
+    expect(isSalesHead({ role: "admin", is_founder: false, position: "Сеттер" })).toBe(true);
+    expect(isSalesHead({ role: "staff", is_founder: true, position: "Сеттер" })).toBe(true);
+  });
+
+  it("rejects a setter", () => {
+    expect(isSalesHead({ role: "staff", is_founder: false, position: "Сеттер" })).toBe(false);
   });
 });
