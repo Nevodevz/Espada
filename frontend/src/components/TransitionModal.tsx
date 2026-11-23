@@ -6,6 +6,7 @@ import { Button, FormField, Input, Select } from "@/components/ui";
 import type { LeadStage, User, RejectReason, StageKind, ScheduledMeeting } from "@/lib/types";
 import { bishkekDateTimeParts } from "@/lib/format";
 import { closerOptions } from "@/lib/roles";
+import { CloserSlots } from "@/components/meetings/CloserSlots";
 
 /** Stage behaviour comes from the stored `kind` (backend `LeadStage.kind`). */
 export function stageKind(s: Pick<LeadStage, "kind">): StageKind {
@@ -214,6 +215,15 @@ export function TransitionModal({
                 ))}
               </Select>
             </FormField>
+            {Number(form.closer_id) > 0 && form.meeting_date ? (
+              <CloserSlots
+                closerId={Number(form.closer_id)}
+                day={String(form.meeting_date)}
+                value={String(form.meeting_time ?? "")}
+                onPick={(t) => set("meeting_time", t)}
+                excludeMeetingId={card.scheduled_meeting?.id ?? null}
+              />
+            ) : null}
           </>
         )}
 
