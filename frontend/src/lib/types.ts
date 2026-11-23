@@ -1153,3 +1153,23 @@ export interface FeedPage {
   items: FeedItem[];
   next_before: string | null;
 }
+
+export interface UnclaimedLead {
+  id: number;
+  client_name: string;
+  phone: string | null;
+  source_name: string | null;
+  created_at: string;
+}
+
+export interface AwaitingReplyItem {
+  lead_id: number;
+  client_name: string;
+  last_body: string | null;
+  last_at: string;
+}
+
+export interface SalesToday {
+  unclaimed: UnclaimedLead[];
+  awaiting_reply: AwaitingReplyItem[];
+}

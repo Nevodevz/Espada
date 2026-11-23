@@ -41,7 +41,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: "Ошибка запроса" }));
-    throw new Error(err.detail || `HTTP ${res.status}`);
+    throw Object.assign(new Error(err.detail || `HTTP ${res.status}`), { status: res.status });
   }
   if (res.status === 204) return undefined as T;
   return res.json();
@@ -584,6 +584,10 @@ async function whatsappForm<T>(path: string, form: FormData): Promise<T> {
   }
   return res.json();
 }
+
+export const salesHubApi = {
+  today: () => request<import("./types").SalesToday>("/sales-hub/today"),
+};
 
 export const whatsappApi = {
   access: () => request<{ can_use: boolean }>("/whatsapp/access"),
