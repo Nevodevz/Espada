@@ -4,10 +4,16 @@ import { useEffect, useRef, useState } from "react";
 
 export type InlineKind = "text" | "number" | "select" | "textarea";
 
-// A value that turns into an input in place. Pencil (a real button, so it is keyboard reachable)
-// shows on hover/focus; Enter or blur saves, Esc cancels. On a failed save the previous value
-// comes back and the error text is shown under the field.
-export function InlineField({ label, value, display, kind = "text", options, onSave, bare = false, placeholder = "добавить…", ariaLabel }: {
+const visuallyHidden: React.CSSProperties = {
+  position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden",
+  clip: "rect(0 0 0 0)", whiteSpace: "nowrap", border: 0,
+};
+
+// A value that turns into an input in place (spec §5.5 «клик — поле ввода»). The value and its
+// pencil are one real button, so a click on the value — or Enter/Space on focus — starts editing;
+// a select opens its list right away where the browser allows it. Enter or blur saves, Esc
+// cancels. On a failed save the previous value comes back and the error text is shown under the field.
+export function InlineField({ label, value, display, kind = "text", options, onSave, bare = false, placeholder = "добавить…", ariaLabel, extra }: {
   label?: string;
   value: string;
   display?: React.ReactNode;
@@ -17,6 +23,8 @@ export function InlineField({ label, value, display, kind = "text", options, onS
   bare?: boolean;
   placeholder?: string;
   ariaLabel?: string;
+  /** Interactive content shown next to the value (kept outside the edit button). */
+  extra?: React.ReactNode;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -26,7 +34,15 @@ export function InlineField({ label, value, display, kind = "text", options, onS
   const inputRef = useRef<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null>(null);
   const name = ariaLabel ?? label ?? "поле";
 
-  useEffect(() => { if (editing) inputRef.current?.focus(); }, [editing]);
+  useEffect(() => {
+    if (!editing) return;
+    const el = inputRef.current;
+    el?.focus();
+    // One interaction for selects: open the list right away (still inside the click's user activation).
+    if (el instanceof HTMLSelectElement) {
+      try { (el as HTMLSelectElement & { showPicker?: () => void }).showPicker?.(); } catch { /* not supported */ }
+    }
+  }, [editing]);
 
   function start() {
     finished.current = false;
@@ -89,14 +105,20 @@ export function InlineField({ label, value, display, kind = "text", options, onS
   );
 
   const view = (
-    <span className="inline-field-view" style={{ display: "inline-flex", alignItems: "baseline", gap: 6, minWidth: 0, justifyContent: bare ? "flex-start" : "flex-end" }}>
-      <span style={{ minWidth: 0, overflowWrap: "anywhere", whiteSpace: kind === "textarea" ? "pre-wrap" : undefined, color: empty ? "var(--text3)" : "var(--text1)" }}>
-        {empty ? placeholder : shown}
-      </span>
-      <button type="button" className="inline-field-pencil" onClick={start} aria-label={`Изменить: ${name}`} title="Изменить"
-        style={{ border: "none", background: "none", cursor: "pointer", color: "var(--text3)", padding: 0, fontSize: 12, lineHeight: 1 }}>
-        ✎
+    <span style={{ display: "inline-flex", alignItems: "baseline", gap: 8, minWidth: 0, justifyContent: bare ? "flex-start" : "flex-end" }}>
+      <button type="button" className="inline-field-view" onClick={start} title="Изменить"
+        style={{
+          display: "inline-flex", alignItems: "baseline", gap: 6, minWidth: 0, border: "none", background: "none",
+          padding: 0, margin: 0, font: "inherit", textAlign: "inherit", cursor: "pointer", color: "inherit",
+          justifyContent: bare ? "flex-start" : "flex-end",
+        }}>
+        <span style={{ minWidth: 0, overflowWrap: "anywhere", whiteSpace: kind === "textarea" ? "pre-wrap" : undefined, color: empty ? "var(--text3)" : "var(--text1)" }}>
+          {empty ? placeholder : shown}
+        </span>
+        <span aria-hidden="true" className="inline-field-pencil" style={{ color: "var(--text3)", fontSize: 12, lineHeight: 1 }}>✎</span>
+        <span style={visuallyHidden}>{`Изменить: ${name}`}</span>
       </button>
+      {extra}
     </span>
   );
 

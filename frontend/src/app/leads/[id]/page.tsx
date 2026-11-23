@@ -215,8 +215,8 @@ export default function LeadDetailPage() {
       throw e;
     }
   };
-  const txt = (field: LeadEditableField, label: string, display?: React.ReactNode) => (
-    <InlineField label={label} value={String((lead as unknown as Record<string, unknown>)[field] ?? "")} display={display} onSave={saveField(field)} />
+  const txt = (field: LeadEditableField, label: string, extra?: React.ReactNode) => (
+    <InlineField label={label} value={String((lead as unknown as Record<string, unknown>)[field] ?? "")} extra={extra} onSave={saveField(field)} />
   );
   const idOf = (v: number | null | undefined) => (v != null ? String(v) : "");
   const sourceOpts = sources.map((s) => ({ value: String(s.id), label: s.name }));
@@ -284,13 +284,14 @@ export default function LeadDetailPage() {
   const left = (
     <div className="card lead-left" style={{ padding: "14px 16px" }}>
       <InlineField label="Сеттер" kind="select" value={idOf(lead.setter_id)} options={userOpts} onSave={saveField("setter_id")}
-        display={lead.setter?.name ?? (canWork ? (
+        display={lead.setter?.name}
+        extra={!lead.setter && canWork ? (
           <Button size="sm" variant="ghost" onClick={async () => {
             try { await whatsappApi.take(lead.id); toast("Лид назначен на вас", "success"); }
             catch (e: unknown) { toast((e as Error).message, "error"); }
             reload();
           }}>Взять себе</Button>
-        ) : null)} />
+        ) : null} />
       <InlineField label="Клоузер" kind="select" value={idOf(lead.closer_id)} options={closerOpts} display={lead.closer?.name} onSave={saveField("closer_id")} />
       <InlineField label="Источник" kind="select" value={idOf(lead.source_id)} options={sourceOpts} display={lead.source?.name} onSave={saveField("source_id")} />
       <InlineField label="Услуга" kind="select" value={idOf(lead.service_id)} options={serviceOpts} display={lead.service?.name} onSave={saveField("service_id")} />
@@ -303,7 +304,9 @@ export default function LeadDetailPage() {
         {txt("instagram", "Instagram")}
         {txt("email", "Email")}
         {txt("address", "Адрес")}
-        {txt("website", "Сайт", lead.website ? <a href={lead.website} target="_blank" rel="noreferrer">{lead.website}</a> : null)}
+        {txt("website", "Сайт", lead.website ? (
+          <a href={lead.website} target="_blank" rel="noreferrer" title="Открыть сайт" aria-label="Открыть сайт">↗</a>
+        ) : null)}
         {txt("industry", "Отрасль")}
         <InlineField label="Сотрудников" kind="number" value={lead.employees_count != null ? String(lead.employees_count) : ""} onSave={saveField("employees_count")} />
         {txt("source_detail", "Уточнение источника")}
@@ -456,7 +459,7 @@ export default function LeadDetailPage() {
           .lead-col-left, .lead-col-right { grid-column: 1; grid-row: auto; }
         }
         .inline-field-pencil { opacity: 0; transition: opacity .12s; }
-        .inline-field:hover .inline-field-pencil, .inline-field-pencil:focus-visible { opacity: 1; }
+        .inline-field:hover .inline-field-pencil, .inline-field-view:focus-visible .inline-field-pencil { opacity: 1; }
         @media (hover: none) { .inline-field-pencil { opacity: 1; } }
         .form-label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text2); font-weight: 500; }
         .form-input { background: var(--bg3); border: 1px solid var(--border); border-radius: 7px; padding: 7px 10px; font-size: 13px; color: var(--text); font-family: inherit; outline: none; width: 100%; box-sizing: border-box; }
