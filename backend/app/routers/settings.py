@@ -1,14 +1,15 @@
 """Settings router: CRUD for CRM lookup tables."""
 from typing import Any
 
+from sqlalchemy import func
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import get_current_user, require_admin
+from app.core.deps import get_current_user, require_admin, require_stage_editor
 from app.models import (
-    LeadSource, Service, LeadStage, RejectReason, ExpenseCategory, Account, User, StageKind,
+    Role, Lead, LeadStatus, LeadSource, Service, LeadStage, RejectReason, ExpenseCategory, Account, User, StageKind,
 )
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -142,6 +143,7 @@ def reorder_service(id: int, new_position: int, db: Session = Depends(get_db), _
 @router.get("/stages")
 def list_stages(
     include_archived: bool = False,
+    with_counts: bool = False,
     db: Session = Depends(get_db),
     _=Depends(get_current_user),
 ):
@@ -149,29 +151,59 @@ def list_stages(
 
     Archived stages are excluded from every picker, form and funnel column; pass
     `include_archived=true` (settings screens, history rendering) to see them.
+    `with_counts=true` adds `lead_count` (active leads sitting on the stage).
     """
     q = db.query(LeadStage)
     if not include_archived:
         q = q.filter(LeadStage.is_archived == False)  # noqa: E712
-    return [_serialize(r) for r in q.order_by(LeadStage.position).all()]
+    rows = [_serialize(r) for r in q.order_by(LeadStage.position).all()]
+    if with_counts:
+        counts = dict(
+            db.query(Lead.stage_id, func.count(Lead.id))
+            .filter(Lead.status == LeadStatus.active)
+            .group_by(Lead.stage_id)
+            .all()
+        )
+        for row in rows:
+            row["lead_count"] = counts.get(row["id"], 0)
+    return rows
+
+def _forbid(detail: str):
+    raise HTTPException(422, detail)
+
 
 @router.post("/stages", status_code=201)
-def create_stage(body: StageCreate, db: Session = Depends(get_db), _=Depends(require_admin)):
-    max_pos = db.query(LeadStage).count()
+def create_stage(body: StageCreate, db: Session = Depends(get_db), user=Depends(require_stage_editor)):
     kind = body.kind
     if kind == "generic" and body.is_lost:
         kind = "lost"
     elif kind == "generic" and body.is_won:
         kind = "won"
-    r = LeadStage(name=body.name, position=max_pos, norm_days=body.norm_days, color=body.color)
+    if user.role != Role.admin and kind != "generic":
+        _forbid("Служебный тип этапа может задать только администратор")
+    # The new stage goes right before the first won/lost stage; later ones shift down.
+    stages = db.query(LeadStage).order_by(LeadStage.position).all()
+    idx = next((i for i, s in enumerate(stages) if s.kind in ("won", "lost") or s.is_won or s.is_lost), len(stages))
+    r = LeadStage(name=body.name, position=idx, norm_days=body.norm_days, color=body.color)
     _set_kind(r, kind)
+    for i, s in enumerate(stages[idx:], start=idx + 1):
+        s.position = i
     db.add(r); db.commit(); db.refresh(r)
     return _serialize(r)
 
 @router.patch("/stages/{id}")
-def update_stage(id: int, body: StageUpdate, db: Session = Depends(get_db), _=Depends(require_admin)):
+def update_stage(id: int, body: StageUpdate, db: Session = Depends(get_db), user=Depends(require_stage_editor)):
     r = db.get(LeadStage, id)
     if not r: raise HTTPException(404, "Not found")
+    if user.role != Role.admin:
+        if (
+            (body.kind is not None and body.kind != r.kind)
+            or (body.is_won is not None and body.is_won != r.is_won)
+            or (body.is_lost is not None and body.is_lost != r.is_lost)
+        ):
+            _forbid("Тип этапа может менять только администратор")
+        if body.is_archived:
+            _forbid("Для архивации используйте архивирование этапа")
     for field in ("name", "norm_days", "is_won", "is_lost", "color", "position", "is_archived"):
         val = getattr(body, field)
         if val is not None:
@@ -186,7 +218,7 @@ def update_stage(id: int, body: StageUpdate, db: Session = Depends(get_db), _=De
     return _serialize(r)
 
 @router.post("/stages/{id}/archive")
-def archive_stage(id: int, db: Session = Depends(get_db), _=Depends(require_admin)):
+def archive_stage(id: int, db: Session = Depends(get_db), user=Depends(require_stage_editor)):
     """Retire a stage without deleting it.
 
     Leads still sitting on it are moved to the first active non-final stage, and
@@ -197,6 +229,8 @@ def archive_stage(id: int, db: Session = Depends(get_db), _=Depends(require_admi
     stage = db.get(LeadStage, id)
     if not stage:
         raise HTTPException(404, "Not found")
+    if user.role != Role.admin and stage.kind != "generic":
+        _forbid("Служебный этап нельзя архивировать")
     if stage.is_archived:
         return _serialize(stage)
 
@@ -228,7 +262,7 @@ def archive_stage(id: int, db: Session = Depends(get_db), _=Depends(require_admi
     return _serialize(stage)
 
 @router.post("/stages/{id}/reorder")
-def reorder_stage(id: int, new_position: int, db: Session = Depends(get_db), _=Depends(require_admin)):
+def reorder_stage(id: int, new_position: int, db: Session = Depends(get_db), _=Depends(require_stage_editor)):
     return _reorder(db, LeadStage, id, new_position)
 
 

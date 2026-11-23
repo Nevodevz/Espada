@@ -72,6 +72,18 @@ def require_admin(user: User = Depends(get_current_user)) -> User:
     return user
 
 
+def require_stage_editor(user: User = Depends(get_current_user)) -> User:
+    """Admin or sales head may configure lead board stages."""
+    from app.services.sales_access import is_sales_head
+
+    if user.role != Role.admin and not is_sales_head(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Нет прав на настройку этапов",
+        )
+    return user
+
+
 def require_founder(user: User = Depends(get_current_user)) -> User:
     if not user.is_founder:
         raise HTTPException(
