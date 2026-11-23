@@ -1,6 +1,7 @@
 "use client";
 
 import { fmtMoney } from "@/lib/format";
+import { conversions } from "@/lib/salesConversions";
 import type { SalesMetricsTotals } from "@/lib/types";
 
 // Short label + a hover hint with the exact counting rule (spec §5.4, §5.4.2).
@@ -15,9 +16,31 @@ const TILES: { key: keyof SalesMetricsTotals; label: string; hint: string; money
   { key: "remaining", label: "Остаток", money: true, hint: "Сумма сделок минус оплачено (по открытым лидам, созданным в периоде)" },
 ];
 
+const fmtPct = (v: number | null) => (v === null ? "—" : `${v}%`);
+
+/** Step conversions (moved from the /analytics strip): ratios of the totals above, same period and filters. */
+function ConversionStrip({ totals }: { totals: SalesMetricsTotals }) {
+  const c = conversions(totals);
+  const items = [
+    { label: "Лид → встреча", value: c.leadToMeeting,
+      hint: "Встречи, проведённые в периоде, делённые на лидов, созданных в периоде (разные когорты: может быть больше 100%)" },
+    { label: "Встреча → продажа", value: c.meetingToSale,
+      hint: "Оплаченные сделки по дате оплаты в периоде, делённые на встречи, проведённые в периоде" },
+  ];
+  return (
+    <div className="card" style={{ padding: "10px 16px", marginBottom: 16, display: "flex", gap: 28, flexWrap: "wrap", alignItems: "center" }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text3)" }}>Конверсии</div>
+      {items.map((i) => (
+        <div key={i.label} title={i.hint} style={{ fontSize: 13, cursor: "help" }}>{i.label}: <b>{fmtPct(i.value)}</b></div>
+      ))}
+    </div>
+  );
+}
+
 export function MetricsTotals({ totals }: { totals: SalesMetricsTotals }) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10, marginBottom: 16 }}>
+    <>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10, marginBottom: 10 }}>
       {TILES.map((t) => {
         const v = totals[t.key];
         const text = t.money ? fmtMoney(v, "с") : t.pct ? `${v}%` : String(v);
@@ -29,5 +52,7 @@ export function MetricsTotals({ totals }: { totals: SalesMetricsTotals }) {
         );
       })}
     </div>
+    <ConversionStrip totals={totals} />
+    </>
   );
 }

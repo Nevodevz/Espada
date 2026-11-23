@@ -154,7 +154,7 @@ export default function AnalyticsPage() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 }}>
               <ChartCard title="Расходы по категориям">
                 <PieWithLegend data={charts.expense_categories.map(c => ({
-                  name: c.name, value: c.amount ?? 0, label: fmtSom(c.amount ?? 0),
+                  name: c.name, value: c.amount ?? 0, label: fmtSom(c.amount ?? 0), legendLabel: fmtCompact(c.amount ?? 0),
                 }))} />
               </ChartCard>
               <ChartCard title="Выручка по услугам">

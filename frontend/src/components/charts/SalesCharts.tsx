@@ -110,9 +110,9 @@ export function DailyRevenueChart({ data }: { data: DailyPoint[] }) {
   );
 }
 
-export interface PieSlice { name: string; value: number; label: string }
+export interface PieSlice { name: string; value: number; label: string; legendLabel?: string }
 
-/** Donut with a legend; `label` is the legend/tooltip text for each slice. */
+/** Donut with a legend; `label` is the tooltip text, `legendLabel` (default `label`) the legend text. */
 export function PieWithLegend({ data }: { data: PieSlice[] }) {
   if (data.length === 0) return <EmptyChart />;
   return (
@@ -132,7 +132,7 @@ export function PieWithLegend({ data }: { data: PieSlice[] }) {
           <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
             <span style={{ width: 10, height: 10, borderRadius: "50%", background: PIE_COLORS[i % PIE_COLORS.length], flexShrink: 0 }} />
             <span style={{ flex: 1, color: "var(--text2)" }}>{s.name}</span>
-            <span style={{ color: "var(--text3)" }}>{s.label}</span>
+            <span style={{ color: "var(--text3)" }}>{s.legendLabel ?? s.label}</span>
           </div>
         ))}
       </div>
