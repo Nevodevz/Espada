@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   DndContext, DragOverlay, MouseSensor, TouchSensor, KeyboardSensor, useSensor, useSensors,
   pointerWithin, closestCenter, useDraggable, useDroppable,
@@ -13,6 +14,7 @@ import { StageActionMenu } from "./StageActionMenu";
 import { cardsForStage, cardsWithoutColumn, splitStages } from "./lead-board-layout";
 import { fmtDateTime, fmtMoneyShort } from "@/lib/format";
 import { WAITING_COLOR, formatWaitingMinutes, waitingLevel } from "@/lib/waiting";
+import { isInteractiveTarget } from "@/lib/interactiveTarget";
 import { TASK_KIND_LABELS } from "@/lib/leadTasks";
 import type { LeadBoardCard, LeadBoardData, LeadStage } from "@/lib/types";
 
@@ -27,21 +29,16 @@ interface Props {
   onTake?: (card: LeadBoardCard) => void;
 }
 
-/** Links, buttons and form controls inside a card keep their own click behaviour and never start a drag. */
-const INTERACTIVE = "a, button, input, select, textarea, [role='menu'], [role='menuitem']";
-function isInteractive(target: EventTarget | null) {
-  return target instanceof Element && target.closest(INTERACTIVE) !== null;
-}
 class CardMouseSensor extends MouseSensor {
   static activators = [{
     eventName: "onMouseDown" as const,
-    handler: ({ nativeEvent }: ReactMouseEvent) => !isInteractive(nativeEvent.target) && nativeEvent.button === 0,
+    handler: ({ nativeEvent }: ReactMouseEvent) => !isInteractiveTarget(nativeEvent.target as Element | null) && nativeEvent.button === 0,
   }];
 }
 class CardTouchSensor extends TouchSensor {
   static activators = [{
     eventName: "onTouchStart" as const,
-    handler: ({ nativeEvent }: ReactTouchEvent) => !isInteractive(nativeEvent.target) && nativeEvent.touches.length === 1,
+    handler: ({ nativeEvent }: ReactTouchEvent) => !isInteractiveTarget(nativeEvent.target as Element | null) && nativeEvent.touches.length === 1,
   }];
 }
 
@@ -98,10 +95,17 @@ function LeadCard({ card, stages, disabled, onDropCard }: {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, isDragging } = useDraggable({
     id: `lead-${card.id}`, disabled, data: { leadId: card.id },
   });
-  // Whole card is the drag activator; it is also the keyboard activator, so Enter on the inner link still navigates.
+  const router = useRouter();
+  const open = () => router.push(`/leads/${card.id}`);
+  // Whole card is the drag activator and opens the lead on click / Enter (Space drags). dnd-kit swallows the click after a drag.
   return <article ref={(node) => { setNodeRef(node); setActivatorNodeRef(node); }} className="lead-board-card" data-lead-id={card.id}
-    data-draggable={disabled ? undefined : "true"} style={{ opacity: isDragging ? 0.35 : 1 }}
-    {...attributes} {...listeners} role="group" aria-roledescription="перетаскиваемая карточка">
+    data-draggable={disabled ? undefined : "true"} style={{ opacity: isDragging ? 0.35 : 1, cursor: "pointer" }}
+    {...attributes} {...listeners} role="group" aria-roledescription="перетаскиваемая карточка"
+    onClick={(e) => { if (!isDragging && !isInteractiveTarget(e.target as Element)) open(); }}
+    onKeyDown={(e) => {
+      listeners?.onKeyDown?.(e);
+      if (e.key === "Enter" && e.target === e.currentTarget && !isDragging) { e.preventDefault(); open(); }
+    }}>
     <div className="lead-board-card-tools">
       <span className="lead-board-handle" aria-hidden="true">
         <span className="material-symbols-outlined">drag_indicator</span>
@@ -164,7 +168,7 @@ export function LeadBoard({ data, disabled, onDropCard, showClosed = false, onTa
   const sensors = useSensors(
     useSensor(CardMouseSensor, { activationConstraint: { distance: 6 } }),
     useSensor(CardTouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
-    useSensor(KeyboardSensor),
+    useSensor(KeyboardSensor, { keyboardCodes: { start: ["Space"], cancel: ["Escape"], end: ["Space", "Enter"] } }),
   );
   const split = splitStages(data.stages);
   const allStages = [...split.columns, ...split.dropZones];

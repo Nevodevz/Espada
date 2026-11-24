@@ -261,7 +261,7 @@ export default function LeadDetailPage() {
 
   function suggestLost() {
     if (!lostStage) return;
-    const reason = rejectReasons.find((r) => r.name === UNREACHABLE_REASON);
+    const reason = rejectReasons.find((r) => r.is_active && r.name === UNREACHABLE_REASON);
     setTransition({ stage: lostStage, defaults: reason ? { reject_reason_id: reason.id } : undefined });
   }
 
