@@ -152,7 +152,7 @@ export default function SalesMetricsPage() {
           <div className="section-label" style={{ marginTop: 8 }}>По сотрудникам</div>
           <EmployeesTable setters={data.employees.setters} closers={data.employees.closers} />
 
-          <LostReasonsCard rows={data.lost_reasons ?? []} />
+          <LostReasonsCard rows={data.lost_reasons ?? []} head={head} />
 
           <DiaryArchive dateFrom={range.from} dateTo={range.to}
             userId={head ? (userId ? Number(userId) : undefined) : user?.id} />

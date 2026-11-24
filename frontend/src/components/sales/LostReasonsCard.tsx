@@ -6,14 +6,21 @@ import type { LostReasonRow } from "@/lib/types";
 const num: React.CSSProperties = { textAlign: "right", fontFamily: "JetBrains Mono, monospace" };
 
 /** «Причины отказа за период»: reason · count · share, expandable by setter. */
-export function LostReasonsCard({ rows }: { rows: LostReasonRow[] }) {
+export function LostReasonsCard({ rows, head = false }: { rows: LostReasonRow[]; head?: boolean }) {
+  const hint = "Лиды, чья последняя смена этапа в периоде — «Минус». Учитываются только период"
+    + (head ? " и фильтр сотрудника (по сеттеру)" : " и только ваши лиды (по сеттеру)")
+    + ": фильтры источника и услуги сюда не применяются.";
   const [open, setOpen] = useState<string | null>(null);
   const keyOf = (r: LostReasonRow) => String(r.reason_id ?? "none");
 
   return (
     <div className="card" style={{ overflow: "hidden", marginBottom: 16 }}>
       <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", fontSize: 12, fontWeight: 600, color: "var(--text3)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-        Причины отказа за период
+        <span title={hint}>
+          Причины отказа за период
+          <span className="material-symbols-outlined" aria-label={hint}
+            style={{ fontSize: 14, color: "var(--text3)", verticalAlign: "middle", marginLeft: 4, cursor: "help", textTransform: "none" }}>info</span>
+        </span>
       </div>
       <div style={{ overflowX: "auto" }}>
         <table className="data-table">
