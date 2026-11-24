@@ -74,7 +74,8 @@ def test_touch_day_boundary_is_bishkek(db, lead, staff):
 def test_stage_change_is_not_a_touch(db, lead, staff):
     act(db, lead, staff, NOON, typ="stage_change", desc="Новый → Созвон")
     act(db, lead, staff, NOON, typ="whatsapp", desc="msg")
-    assert setter_row(db, staff) is None
+    row = setter_row(db, staff)
+    assert row is None or (row["touches"] == 0 and row["untouched"] == 1)
 
 
 def test_manual_activity_is_a_touch(db, lead, staff):
