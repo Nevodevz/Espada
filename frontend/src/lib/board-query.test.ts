@@ -16,3 +16,11 @@ describe("boardQueryString", () => {
     }
   });
 });
+
+describe("listQueryString", () => {
+  it("sends show_closed=false explicitly for the list", async () => {
+    const { listQueryString } = await import("./api");
+    expect(listQueryString({ show_closed: false, overdue: true })).toBe("?overdue=true&show_closed=false");
+    expect(listQueryString({ show_closed: true })).toBe("?show_closed=true");
+  });
+});

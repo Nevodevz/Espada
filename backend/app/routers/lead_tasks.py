@@ -8,9 +8,10 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
-from app.models import Lead, LeadStatus, LeadTask, Role, User
+from app.models import Lead, LeadStatus, LeadTask, User
 from app.schemas import UserOut
 from app.services import lead_tasks as svc
+from app.services.sales_access import is_sales_head
 from app.services.whatsapp.access import can_use_whatsapp
 
 router = APIRouter(tags=["lead-tasks"])
@@ -67,7 +68,7 @@ def _aware(dt: datetime) -> datetime:
 
 
 def _is_manager(user: User) -> bool:
-    return user.role == Role.admin or bool(user.is_founder)
+    return is_sales_head(user)
 
 
 def _can_edit(db: Session, user: User, task: LeadTask) -> bool:

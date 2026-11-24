@@ -5,9 +5,10 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     Lead, LeadStageHistory, LeadActivity, LeadStage, Meeting, Deal, DealPayment,
-    MeetingStatus, PaymentStatus,
+    LeadStatus, MeetingStatus, PaymentStatus, RejectReason,
 )
 from app.services import deals as deal_service
+from app.services.whatsapp.phone import normalize_phone
 
 
 def create_lead_activity(
@@ -65,6 +66,7 @@ def change_lead_stage(
     changed_by: int | None = None,
     comment: str = "",
     extra_data: dict | None = None,
+    meeting_dt: datetime | None = None,
 ) -> LeadStageHistory:
     extra_data = extra_data or {}
 
@@ -77,7 +79,7 @@ def change_lead_stage(
     # Side effects run BEFORE the stage is moved so a handler can veto the move.
     # `won` in particular must not close a deal that is only partially paid.
     if kind == "meeting":
-        _handle_meeting_stage(db, lead, changed_by, extra_data)
+        _handle_meeting_stage(db, lead, changed_by, extra_data, meeting_dt)
     elif kind == "contract":
         _handle_contract_stage(db, lead, changed_by, extra_data)
     elif kind == "waiting_payment":
@@ -131,30 +133,31 @@ def scheduled_meeting_for(db: Session, lead_id: int) -> Meeting | None:
     )
 
 
-def _handle_meeting_stage(db: Session, lead: Lead, changed_by: int | None, extra: dict) -> None:
-    meeting_date_str = extra.get("meeting_date") or extra.get("date")
-    meeting_time_str = extra.get("meeting_time") or extra.get("time", "00:00")
-    address = extra.get("address", "")
-    # «Комментарий» — canonical storage is Meeting.notes.
-    notes = extra.get("comment") or extra.get("notes") or ""
-    closer_id = extra.get("closer_id") or lead.closer_id
-    setter_id = extra.get("setter_id") or lead.setter_id
+def is_open_lead(db: Session, lead: Lead) -> bool:
+    """Not archived and not on a won/lost stage (a lead with no stage counts as open)."""
+    if lead.status == LeadStatus.archived:
+        return False
+    stage = db.get(LeadStage, lead.stage_id) if lead.stage_id else None
+    return stage is None or not (stage.is_won or stage.is_lost)
 
-    meeting_dt = datetime.now(timezone.utc)
-    if meeting_date_str:
-        try:
-            local = datetime.fromisoformat(f"{meeting_date_str[:10]}T{meeting_time_str or '00:00'}:00")
-            meeting_dt = local.replace(tzinfo=BISHKEK_TZ).astimezone(timezone.utc)
-        except ValueError:
-            pass
 
-    try:
-        duration = int(extra.get("duration_minutes") or 60)
-    except (TypeError, ValueError):
-        duration = 60
-    duration = max(5, min(duration, 24 * 60))
+def schedule_meeting_for_lead(
+    db: Session,
+    lead: Lead,
+    *,
+    meeting_dt: datetime,
+    closer_id: int | None,
+    setter_id: int | None,
+    address: str = "",
+    notes: str = "",
+    duration_minutes: int | None = None,
+) -> Meeting:
+    """Move the lead's open meeting to `meeting_dt`, or create one.
 
-    # Re-entering the stage moves the open meeting instead of creating a duplicate.
+    Blank address/notes/duration/closer/setter mean "unchanged" on a reschedule,
+    never "erase what the closer wrote". Fills `lead.closer_id` when it is empty.
+    """
+    duration = max(5, min(duration_minutes or 60, 24 * 60))
     m = scheduled_meeting_for(db, lead.id)
     if m is None:
         m = Meeting(
@@ -164,19 +167,55 @@ def _handle_meeting_stage(db: Session, lead: Lead, changed_by: int | None, extra
         )
         db.add(m)
     else:
-        # Rescheduling: blank fields mean "unchanged", never "erase what the closer wrote".
         if address:
             m.address = address
         if notes:
             m.notes = notes
-        if extra.get("duration_minutes"):
+        if duration_minutes:
             m.duration_minutes = duration
         if closer_id:
             m.closer_id = closer_id
         if setter_id:
             m.setter_id = setter_id
     m.meeting_date = meeting_dt
+    if closer_id and not lead.closer_id:
+        lead.closer_id = closer_id
     db.flush()
+    return m
+
+
+def _handle_meeting_stage(
+    db: Session, lead: Lead, changed_by: int | None, extra: dict, meeting_dt: datetime | None = None,
+) -> None:
+    meeting_date_str = extra.get("meeting_date") or extra.get("date")
+    meeting_time_str = extra.get("meeting_time") or extra.get("time", "00:00")
+
+    # A server-side caller that already has an exact instant passes `meeting_dt`
+    # (never via `extra`, which carries client JSON).
+    if meeting_dt is None:
+        meeting_dt = datetime.now(timezone.utc)
+        if meeting_date_str:
+            try:
+                local = datetime.fromisoformat(f"{meeting_date_str[:10]}T{meeting_time_str or '00:00'}:00")
+                meeting_dt = local.replace(tzinfo=BISHKEK_TZ).astimezone(timezone.utc)
+            except ValueError:
+                pass
+
+    try:
+        duration = int(extra.get("duration_minutes") or 0) or None
+    except (TypeError, ValueError):
+        duration = None
+
+    schedule_meeting_for_lead(
+        db, lead,
+        meeting_dt=meeting_dt,
+        closer_id=extra.get("closer_id") or lead.closer_id,
+        setter_id=extra.get("setter_id") or lead.setter_id,
+        address=extra.get("address", ""),
+        # «Комментарий» — canonical storage is Meeting.notes.
+        notes=extra.get("comment") or extra.get("notes") or "",
+        duration_minutes=duration,
+    )
 
 
 def _handle_contract_stage(db: Session, lead: Lead, changed_by: int | None, extra: dict) -> None:
@@ -356,8 +395,16 @@ def _handle_lost_stage(db: Session, lead: Lead, changed_by: int | None, extra: d
     reject_comment = extra.get("reject_comment", "")
     closer_id = extra.get("closer_id") or lead.closer_id
 
-    if reject_reason_id:
-        lead.reject_reason_id = reject_reason_id
+    # Validate before touching the lead: the router commits on StageTransitionError.
+    try:
+        reason_id = int(reject_reason_id) if reject_reason_id else None
+    except (TypeError, ValueError):
+        raise StageTransitionError("Укажите причину отказа")
+    reason = db.get(RejectReason, reason_id) if reason_id else None
+    if reason is None or not reason.is_active:
+        raise StageTransitionError("Укажите причину отказа")
+
+    lead.reject_reason_id = reason.id
     if reject_comment:
         lead.reject_comment = reject_comment
     if closer_id:
@@ -439,3 +486,19 @@ def get_lead_timeline(db: Session, lead: Lead) -> list[dict[str, Any]]:
 
     events.sort(key=lambda e: e.get("at") or "")
     return events
+
+
+def find_duplicate_lead(db: Session, phones: list[str], exclude_id: int | None = None) -> Lead | None:
+    """First active lead whose phone or whatsapp matches any of `phones` by digits."""
+    wanted = {normalize_phone(p) for p in phones}
+    wanted.discard("")
+    if not wanted:
+        return None
+    q = db.query(Lead).filter(Lead.status == LeadStatus.active)
+    if exclude_id is not None:
+        q = q.filter(Lead.id != exclude_id)
+    q = q.filter(((Lead.phone != "") & Lead.phone.isnot(None)) | ((Lead.whatsapp != "") & Lead.whatsapp.isnot(None)))
+    for lead in q.order_by(Lead.id):
+        if normalize_phone(lead.phone) in wanted or normalize_phone(lead.whatsapp) in wanted:
+            return lead
+    return None

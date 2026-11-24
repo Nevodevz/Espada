@@ -1,12 +1,14 @@
 "use client";
 
 import { closerOptions } from "@/lib/roles";
+import { creatableStages } from "@/lib/stageSettings";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal } from "@/components/Modal";
 import { Button, FormField, Input, Select, Textarea } from "@/components/ui";
 import { useToast } from "@/context/ToastContext";
 import { leadApi } from "@/lib/api";
+import { existingLeadFromError, type ExistingLead } from "@/lib/apiError";
 import type { LeadSource, LeadStage, ServiceItem, UserWithStats } from "@/lib/types";
 
 const EMPTY = {
@@ -43,12 +45,13 @@ export function CreateLeadModal({
   const [form, setForm] = useState({ ...EMPTY });
   const [saving, setSaving] = useState(false);
   const [showAttribution, setShowAttribution] = useState(false);
-  const [dupe, setDupe] = useState<{ id: number; client_name: string } | null>(null);
+  const [dupe, setDupe] = useState<ExistingLead | null>(null);
 
   const f = (k: keyof typeof form) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
       setForm((prev) => ({ ...prev, [k]: e.target.value }));
 
+  const dupeStage = stages.find((st) => st.id === dupe?.stage_id)?.name;
   const selectedSource = sources.find((s) => String(s.id) === form.source_id);
 
   async function submit(force = false) {
@@ -83,16 +86,9 @@ export function CreateLeadModal({
       onCreated();
       onClose();
     } catch (err: unknown) {
+      const existing = existingLeadFromError(err);
+      if (existing) { setDupe(existing); return; }
       const msg = (err as Error).message || "";
-      if (msg.includes("existing")) {
-        try {
-          const match = msg.match(/\{[\s\S]*\}/);
-          if (match) {
-            const parsed = JSON.parse(match[0]);
-            if (parsed.existing) { setDupe(parsed.existing); setSaving(false); return; }
-          }
-        } catch { /* fall through to the generic toast */ }
-      }
       toast(msg || "Ошибка создания", "error");
     } finally {
       setSaving(false);
@@ -106,14 +102,14 @@ export function CreateLeadModal({
       {dupe && (
         <div style={{ background: "rgba(181,93,0,.1)", border: "1px solid #b55d00", borderRadius: 8, padding: "12px 16px", marginBottom: 16 }}>
           <div style={{ fontWeight: 600, color: "#b55d00", marginBottom: 6 }}>
-            ⚠️ Лид с таким номером уже существует
+            Лид с таким номером уже есть
           </div>
           <div style={{ fontSize: 13, color: "var(--text2)", marginBottom: 10 }}>
-            Клиент: <b>{dupe.client_name}</b>
+            <b>{dupe.client_name}</b>{dupeStage ? ` · ${dupeStage}` : ""}
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <Button variant="ghost" size="sm" onClick={() => { onClose(); router.push(`/leads/${dupe.id}`); }}>
-              Открыть существующий
+              Открыть
             </Button>
             <Button size="sm" onClick={() => { setDupe(null); submit(true); }}>Всё равно создать</Button>
             <Button variant="ghost" size="sm" onClick={() => setDupe(null)}>Отмена</Button>
@@ -162,7 +158,7 @@ export function CreateLeadModal({
         <FormField label="Этап">
           <Select value={form.stage_id} onChange={f("stage_id")}>
             <option value="">— по умолчанию —</option>
-            {stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            {creatableStages(stages).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </Select>
         </FormField>
 

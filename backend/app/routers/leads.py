@@ -3,7 +3,6 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import func, and_
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
@@ -15,8 +14,9 @@ from app.models import (
 )
 from app.schemas import UserOut
 from app.services import deals as deal_service
+from app.services.sales_metrics import latest_deal_by_lead
 from app.services.leads import (
-    scheduled_meeting_for,
+    scheduled_meeting_for, find_duplicate_lead,
     change_lead_stage, add_activity, get_lead_timeline, StageTransitionError, active_stages,
 )
 
@@ -362,31 +362,6 @@ class LeadListResponse(BaseModel):
     total: int
 
 
-class LeadStats(BaseModel):
-    leads_today: int
-    leads_period: int
-    meetings_period: int
-    closed_won: int
-    conversion_pct: float
-    # Сумма открытых сделок (не выигранных и не проигранных)
-    deals_sum: int
-    paid_sum: int
-    remaining_sum: int
-    cpl: Optional[float] = None
-
-
-class FunnelStats(BaseModel):
-    new_leads: int
-    meetings_stage: int
-    contracts_sent: int
-    waiting_payment: int
-    closed_won: int
-    conversion_pct: float
-    deals_sum: int
-    paid_sum: int
-    remaining_sum: int
-
-
 class FunnelCardOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -443,19 +418,8 @@ def _lead_to_dict(lead: Lead) -> dict:
 
 
 def _deals_by_lead(db: Session, lead_ids: list[int]) -> dict[int, Deal]:
-    """Most recent deal per lead, in a single query (avoids N+1 on lists)."""
-    if not lead_ids:
-        return {}
-    rows = (
-        db.query(Deal)
-        .filter(Deal.lead_id.in_(lead_ids))
-        .order_by(Deal.lead_id, Deal.created_at.desc(), Deal.id.desc())
-        .all()
-    )
-    out: dict[int, Deal] = {}
-    for d in rows:
-        out.setdefault(d.lead_id, d)
-    return out
+    """Most recent deal per lead (shared with the sales metrics)."""
+    return latest_deal_by_lead(db, lead_ids)
 
 
 def _money_fields(db: Session, deal: Deal | None) -> dict:
@@ -498,67 +462,6 @@ def _apply_attribution(lead: Lead, data: dict) -> None:
 
 # ─────────────────────────── Routes ────────────────────────────
 
-@router.get("/stats", response_model=LeadStats)
-def lead_stats(
-    date_from: Optional[str] = Query(None),
-    date_to: Optional[str] = Query(None),
-    db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
-):
-    today = date.today()
-    q_base = db.query(Lead).filter(Lead.status == LeadStatus.active)
-
-    q_period = q_base
-    if date_from:
-        q_period = q_period.filter(Lead.created_at >= datetime.fromisoformat(date_from))
-    if date_to:
-        q_period = q_period.filter(Lead.created_at < datetime.fromisoformat(date_to))
-
-    leads_today = db.query(func.count(Lead.id)).filter(
-        Lead.status == LeadStatus.active,
-        func.date(Lead.created_at) == today,
-    ).scalar() or 0
-
-    leads_period = q_period.count()
-
-    q_meetings = db.query(func.count(Meeting.id)).filter(Meeting.lead_id.isnot(None))
-    if date_from:
-        q_meetings = q_meetings.filter(Meeting.created_at >= datetime.fromisoformat(date_from))
-    if date_to:
-        q_meetings = q_meetings.filter(Meeting.created_at < datetime.fromisoformat(date_to))
-    meetings_period = q_meetings.scalar() or 0
-
-    won_stage_ids = [s.id for s in db.query(LeadStage).filter(LeadStage.is_won == True).all()]
-    closed_won = q_period.filter(Lead.stage_id.in_(won_stage_ids)).count() if won_stage_ids else 0
-
-    conversion_pct = round(closed_won / leads_period * 100, 1) if leads_period > 0 else 0.0
-
-    # Money totals come from deals, not from the deprecated lead columns.
-    lost_stage_ids = [s.id for s in db.query(LeadStage).filter(LeadStage.is_lost == True).all()]
-    exclude_ids = won_stage_ids + lost_stage_ids
-    open_q = db.query(Lead.id).filter(Lead.status == LeadStatus.active)
-    if exclude_ids:
-        open_q = open_q.filter(Lead.stage_id.notin_(exclude_ids))
-    open_ids = [r[0] for r in open_q.all()]
-
-    deals_sum = paid_sum = 0
-    if open_ids:
-        for deal in _deals_by_lead(db, open_ids).values():
-            deals_sum += int(deal.amount or 0)
-            paid_sum += int(deal.paid_amount or 0)
-
-    return LeadStats(
-        leads_today=leads_today,
-        leads_period=leads_period,
-        meetings_period=meetings_period,
-        closed_won=closed_won,
-        conversion_pct=conversion_pct,
-        deals_sum=deals_sum,
-        paid_sum=paid_sum,
-        remaining_sum=max(deals_sum - paid_sum, 0),
-    )
-
-
 def _apply_list_filters(q, *, source_id, service_id, setter_id, closer_id, stage_id,
                         date_from, date_to, search):
     """Shared filter set for the list and funnel views of the same page."""
@@ -600,10 +503,17 @@ def list_leads(
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
+    open_only: bool = Query(False),
+    mine: bool = Query(False),
+    unassigned: bool = Query(False),
+    overdue: bool = Query(False),
+    no_task: bool = Query(False),
+    # Same meaning as on the board; the list keeps closed leads unless asked to hide them.
+    show_closed: bool = Query(True),
     limit: int = Query(30, le=100),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
     q = _eager_lead(db)
     q = _apply_list_filters(
@@ -612,6 +522,18 @@ def list_leads(
         date_to=date_to, search=search,
     )
     q = q.filter(Lead.status == (status or LeadStatus.active))
+    if open_only:
+        closed = db.query(LeadStage.id).filter(LeadStage.is_won | LeadStage.is_lost)
+        q = q.filter(Lead.status != LeadStatus.archived)
+        q = q.filter(Lead.stage_id.is_(None) | Lead.stage_id.notin_(closed))
+    from app.services.lead_board import apply_board_toggles, task_state_matches
+    q = apply_board_toggles(db, q, user, mine=mine, unassigned=unassigned, show_closed=show_closed)
+    if overdue or no_task:
+        # Task state lives in another table; resolve it for all matches, then paginate.
+        candidate_ids = [row[0] for row in q.with_entities(Lead.id).all()]
+        nxt, _streaks = task_extras(db, candidate_ids)
+        kept = [i for i in candidate_ids if task_state_matches(i, nxt, overdue=overdue, no_task=no_task)]
+        q = q.filter(Lead.id.in_(kept))
 
     total = q.count()
     items = q.order_by(Lead.created_at.desc()).offset(offset).limit(limit).all()
@@ -627,71 +549,6 @@ def list_leads(
 
 
 # ─────────────────────────── Funnel (must be before /{lead_id}) ──
-
-@router.get("/funnel-stats", response_model=FunnelStats)
-def funnel_stats(
-    date_from: Optional[str] = Query(None),
-    date_to: Optional[str] = Query(None),
-    source_id: Optional[int] = Query(None),
-    service_id: Optional[int] = Query(None),
-    stage_id: Optional[int] = Query(None),
-    setter_id: Optional[int] = Query(None),
-    closer_id: Optional[int] = Query(None),
-    search: Optional[str] = Query(None),
-    db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
-):
-    stages = active_stages(db)
-    stage_map = {s.id: s for s in db.query(LeadStage).all()}
-
-    q = db.query(Lead).filter(Lead.status == LeadStatus.active)
-    q = _apply_list_filters(
-        q, source_id=source_id, service_id=service_id, setter_id=setter_id,
-        closer_id=closer_id, stage_id=stage_id, date_from=date_from,
-        date_to=date_to, search=search,
-    )
-    leads = q.all()
-    deals = _deals_by_lead(db, [l.id for l in leads])
-
-    from app.services.leads import _stage_kind
-    new_leads = meetings_stage = contracts_sent = waiting_payment_count = closed_won = 0
-    deals_sum = paid_sum = 0
-    min_pos = min((s.position for s in stages), default=0)
-
-    for lead in leads:
-        stage = stage_map.get(lead.stage_id) if lead.stage_id else None
-        kind = _stage_kind(stage) if stage else "generic"
-        if kind == "generic" and stage and stage.position == min_pos:
-            new_leads += 1
-        if kind == "meeting":
-            meetings_stage += 1
-        if kind == "contract":
-            contracts_sent += 1
-        if kind == "waiting_payment":
-            waiting_payment_count += 1
-        if kind == "won":
-            closed_won += 1
-        if kind not in ("won", "lost"):
-            deal = deals.get(lead.id)
-            if deal is not None:
-                deals_sum += int(deal.amount or 0)
-                paid_sum += int(deal.paid_amount or 0)
-
-    total = len(leads)
-    conversion_pct = round(closed_won / total * 100, 1) if total > 0 else 0.0
-
-    return FunnelStats(
-        new_leads=new_leads,
-        meetings_stage=meetings_stage,
-        contracts_sent=contracts_sent,
-        waiting_payment=waiting_payment_count,
-        closed_won=closed_won,
-        conversion_pct=conversion_pct,
-        deals_sum=deals_sum,
-        paid_sum=paid_sum,
-        remaining_sum=max(deals_sum - paid_sum, 0),
-    )
-
 
 @router.get("/funnel", response_model=FunnelResponse)
 def get_funnel(
@@ -752,6 +609,21 @@ def get_funnel(
         cards.append(FunnelCardOut(**d))
 
     return FunnelResponse(leads=cards, stages=stages)
+
+
+def _existing_out(lead: Lead) -> dict:
+    return {"id": lead.id, "client_name": lead.client_name, "stage_id": lead.stage_id}
+
+
+@router.get("/duplicates")
+def lead_duplicates(
+    phone: str = "",
+    exclude_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    existing = find_duplicate_lead(db, [phone], exclude_id=exclude_id)
+    return {"existing": _existing_out(existing) if existing else None}
 
 
 @router.get("/{lead_id}", response_model=LeadDetailOut)
@@ -851,21 +723,14 @@ def create_lead(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if body.phone and not body.force:
-        existing = db.query(Lead).filter(
-            Lead.phone == body.phone,
-            Lead.status == LeadStatus.active,
-        ).first()
+    if not body.force:
+        existing = find_duplicate_lead(db, [body.phone, body.whatsapp])
         if existing:
             raise HTTPException(
                 status_code=409,
                 detail={
                     "message": "Лид с таким номером уже существует",
-                    "existing": {
-                        "id": existing.id,
-                        "client_name": existing.client_name,
-                        "stage_id": existing.stage_id,
-                    },
+                    "existing": _existing_out(existing),
                 },
             )
 
@@ -880,6 +745,9 @@ def create_lead(
         stage = db.query(LeadStage).filter(LeadStage.id == stage_id).first()
         if stage is None or stage.is_archived:
             raise HTTPException(422, "Выбран недоступный этап")
+        # Closing stages need their side effects (loss reason, paid deal) — only via a transition.
+        if stage.kind in ("won", "lost") or stage.is_won or stage.is_lost:
+            raise HTTPException(422, "Нельзя создать лид сразу в этом этапе")
     else:
         first_stage = next(iter(active_stages(db)), None)
         stage_id = first_stage.id if first_stage else None
@@ -939,10 +807,14 @@ def update_lead(
     lead = _load_lead(db, lead_id)
     data = body.model_dump(exclude_unset=True)
 
-    if data.get("stage_id"):
+    if data.get("stage_id") and data["stage_id"] != lead.stage_id:
         stage = db.query(LeadStage).filter(LeadStage.id == data["stage_id"]).first()
         if stage is None or stage.is_archived:
             raise HTTPException(422, "Выбран недоступный этап")
+        # Non-generic stages carry side effects (meeting, deal, loss reason) that only
+        # PATCH /{id}/stage applies.
+        if (stage.kind or "generic") != "generic":
+            raise HTTPException(422, "Этап меняется через перевод этапа")
 
     deal_amount = data.pop("deal_amount", None)
     for field, val in data.items():

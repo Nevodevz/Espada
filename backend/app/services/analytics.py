@@ -422,7 +422,7 @@ def problems(db: Session) -> list[dict]:
         issues.append({
             "severity": "warning",
             "message": f"{no_task_count} открытых лидов без задачи",
-            "link": "/leads/board?no_task=true",
+            "link": "/leads?view=board&no_task=true",
         })
 
     overdue_count = (
@@ -434,7 +434,7 @@ def problems(db: Session) -> list[dict]:
         issues.append({
             "severity": "error",
             "message": f"{overdue_count} лидов с просроченной задачей",
-            "link": "/leads/board?overdue=true",
+            "link": "/leads?view=board&overdue=true",
         })
 
     # ── Overdue expected payments ──

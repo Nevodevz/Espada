@@ -3,17 +3,22 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { Modal } from "@/components/Modal";
 import { Shell } from "@/components/Shell";
 import { Button, ConfirmModal } from "@/components/ui";
 import { TransitionModal, stageKind, STAGE_ACTION_LABELS } from "@/components/TransitionModal";
 import { PaymentScheduleSection } from "@/components/leads/PaymentSchedule";
-import { AddActivityModal, AddFileModal, EditLeadModal } from "@/components/leadcard/LeadModals";
+import { AddActivityModal, AddFileModal } from "@/components/leadcard/LeadModals";
+import { InlineField } from "@/components/leadcard/InlineField";
 import { LeadFeed } from "@/components/leadcard/LeadFeed";
 import { LeadTasksPanel } from "@/components/leadcard/LeadTasksPanel";
 import { LeadComposer, type ComposerTab } from "@/components/leadcard/LeadComposer";
 import { useApp } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";
 import { api, leadApi, leadTasksApi, settingsApi, whatsappApi } from "@/lib/api";
+import type { ExistingLead } from "@/lib/apiError";
+import { buildLeadPatch, type LeadEditableField } from "@/lib/leadPatch";
+import { closerOptions } from "@/lib/roles";
 import { fmtDate, fmtDateTime, fmtMoney, fmtMoneyShort } from "@/lib/format";
 import type {
   Account, Department, LeadDetail, LeadSource, LeadStage, LeadTask, PaymentSchedule, Project,
@@ -115,6 +120,7 @@ export default function LeadDetailPage() {
   const { id } = useParams<{ id: string }>();
   const leadId = Number(id);
   const router = useRouter();
+  const [dupeAsk, setDupeAsk] = useState<{ existing: ExistingLead; resolve: (c: "save" | "open" | "cancel") => void } | null>(null);
   const toast = useToast();
   const { isAdmin, user } = useApp();
 
@@ -136,7 +142,6 @@ export default function LeadDetailPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [tab, setTab] = useState<ComposerTab | null>(null);
 
-  const [editModal, setEditModal] = useState(false);
   const [actModal, setActModal] = useState(false);
   const [fileModal, setFileModal] = useState(false);
   const [archiveConfirm, setArchiveConfirm] = useState(false);
@@ -186,7 +191,7 @@ export default function LeadDetailPage() {
       || (salesId !== undefined && u.department_ids?.includes(salesId))));
   }, [users, departments]);
 
-  if (loading) return <Shell title="Лид"><div style={{ padding: 40, color: "var(--text3)", textAlign: "center" }}>Загрузка…</div></Shell>;
+  if (loading) return <Shell title="Отдел продаж"><div style={{ padding: 40, color: "var(--text3)", textAlign: "center" }}>Загрузка…</div></Shell>;
   if (!lead) return null;
 
   const activeStages = stages.filter((s) => !s.is_archived);
@@ -200,6 +205,46 @@ export default function LeadDetailPage() {
     || user?.id === lead.setter_id || user?.id === lead.closer_id;
   const activeTab: ComposerTab = tab ?? (canWork && lead.whatsapp_chat_id ? "whatsapp" : "task");
   const streak = lead.no_answer_streak ?? 0;
+
+  // Inline edit: one field per PATCH, then reload so derived values (deal status, etc.) refresh.
+  // Errors (e.g. 422 «сумма ниже графика оплат») are toasted and rethrown so the field reverts.
+  // A phone/whatsapp that another active lead already has waits for the user's choice in a modal.
+  const askAboutDuplicate = (existing: ExistingLead) =>
+    new Promise<"save" | "open" | "cancel">((resolve) => setDupeAsk({ existing, resolve }));
+  const answerDuplicate = (choice: "save" | "open" | "cancel") => {
+    dupeAsk?.resolve(choice);
+    setDupeAsk(null);
+  };
+  const saveField = (field: LeadEditableField) => async (raw: string) => {
+    try {
+      if ((field === "phone" || field === "whatsapp") && raw.trim()) {
+        const { existing } = await leadApi.findDuplicate(raw, lead!.id);
+        if (existing) {
+          const choice = await askAboutDuplicate(existing);
+          if (choice === "open") { router.push(`/leads/${existing.id}`); return; }
+          if (choice === "cancel") return;
+        }
+      }
+      await leadApi.update(lead!.id, buildLeadPatch(field, raw));
+      await reload();
+      toast("Сохранено", "success");
+    } catch (e: unknown) {
+      toast((e as Error).message || "Не удалось сохранить", "error");
+      throw e;
+    }
+  };
+  const txt = (field: LeadEditableField, label: string, extra?: React.ReactNode) => (
+    <InlineField label={label} value={String((lead as unknown as Record<string, unknown>)[field] ?? "")} extra={extra} onSave={saveField(field)} />
+  );
+  const idOf = (v: number | null | undefined) => (v != null ? String(v) : "");
+  const sourceOpts = sources.map((s) => ({ value: String(s.id), label: s.name }));
+  const serviceOpts = services.map((s) => ({ value: String(s.id), label: s.name }));
+  const userOpts = users.map((u) => ({ value: String(u.id), label: u.name }));
+  const closerOpts = closerOptions(users, lead.closer_id).map((u) => ({ value: String(u.id), label: u.name }));
+  const dealAmountField = (
+    <InlineField label="Сумма сделки" kind="number" value={lead.deal_amount > 0 ? String(lead.deal_amount) : ""}
+      display={lead.deal_amount > 0 ? fmtMoney(lead.deal_amount) : null} onSave={saveField("deal_amount")} />
+  );
 
   async function handleTransitionConfirm(comment: string, extra: Record<string, unknown>) {
     if (!transition) return;
@@ -216,7 +261,7 @@ export default function LeadDetailPage() {
 
   function suggestLost() {
     if (!lostStage) return;
-    const reason = rejectReasons.find((r) => r.name === UNREACHABLE_REASON);
+    const reason = rejectReasons.find((r) => r.is_active && r.name === UNREACHABLE_REASON);
     setTransition({ stage: lostStage, defaults: reason ? { reject_reason_id: reason.id } : undefined });
   }
 
@@ -225,19 +270,24 @@ export default function LeadDetailPage() {
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
         <div>
           <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 20, fontWeight: 800, color: "var(--text1)" }}>{lead.client_name}</span>
-            {lead.company_name && <span style={{ color: "var(--text3)" }}>{lead.company_name}</span>}
+            <span style={{ fontSize: 20, fontWeight: 800, color: "var(--text1)" }}>
+              <InlineField bare label="Имя клиента" value={lead.client_name} onSave={saveField("client_name")} />
+            </span>
+            <span style={{ color: "var(--text3)" }}>
+              <InlineField bare label="Компания" value={lead.company_name} placeholder="компания…" onSave={saveField("company_name")} />
+            </span>
             {lead.status === "archived" && <span style={{ padding: "2px 8px", borderRadius: 8, background: "var(--bg3)", color: "var(--text3)", fontSize: 11 }}>Архив</span>}
           </div>
-          <div style={{ fontSize: 13, color: "var(--text3)", marginTop: 4 }}>
-            {[lead.phone, lead.whatsapp && lead.whatsapp !== lead.phone ? `WhatsApp ${lead.whatsapp}` : ""].filter(Boolean).join(" · ") || "Нет телефона"}
+          <div style={{ fontSize: 13, color: "var(--text3)", marginTop: 4, display: "flex", gap: 14, flexWrap: "wrap" }}>
+            <InlineField bare label="Телефон" value={lead.phone} placeholder="добавить телефон…" onSave={saveField("phone")} />
+            <InlineField bare label="WhatsApp" value={lead.whatsapp} display={lead.whatsapp ? `WhatsApp ${lead.whatsapp}` : null}
+              placeholder="добавить WhatsApp…" onSave={saveField("whatsapp")} />
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           {showPay && wonStage && <Button size="sm" icon="payments" onClick={() => setTransition({ stage: wonStage })}>Провести оплату</Button>}
           <StagePicker stages={activeStages} currentId={lead.stage_id} onPick={(s) => setTransition({ stage: s })} />
           <MoreMenu items={[
-            { label: "Изменить", onClick: () => setEditModal(true) },
             { label: "Добавить касание", onClick: () => setActModal(true) },
             { label: "Добавить файл / ссылку", onClick: () => setFileModal(true) },
             ...(canWork && lead.whatsapp_chat_id ? [{ label: "Не лид (WhatsApp)", onClick: () => setIgnoreConfirm(true) }] : []),
@@ -251,36 +301,45 @@ export default function LeadDetailPage() {
 
   const left = (
     <div className="card lead-left" style={{ padding: "14px 16px" }}>
-      <Field label="Сеттер">
-        {lead.setter?.name ?? (canWork ? (
+      <InlineField label="Сеттер" kind="select" value={idOf(lead.setter_id)} options={userOpts} onSave={saveField("setter_id")}
+        display={lead.setter?.name}
+        extra={!lead.setter && canWork ? (
           <Button size="sm" variant="ghost" onClick={async () => {
             try { await whatsappApi.take(lead.id); toast("Лид назначен на вас", "success"); }
             catch (e: unknown) { toast((e as Error).message, "error"); }
             reload();
           }}>Взять себе</Button>
-        ) : null)}
-      </Field>
-      <Field label="Клоузер">{lead.closer?.name}</Field>
-      <Field label="Источник">{lead.source?.name}</Field>
-      <Field label="Услуга">{lead.service?.name}</Field>
-      <Field label="Сумма сделки">{lead.deal_amount > 0 ? fmtMoneyShort(lead.deal_amount) : null}</Field>
+        ) : null} />
+      <InlineField label="Клоузер" kind="select" value={idOf(lead.closer_id)} options={closerOpts} display={lead.closer?.name} onSave={saveField("closer_id")} />
+      <InlineField label="Источник" kind="select" value={idOf(lead.source_id)} options={sourceOpts} display={lead.source?.name} onSave={saveField("source_id")} />
+      <InlineField label="Услуга" kind="select" value={idOf(lead.service_id)} options={serviceOpts} display={lead.service?.name} onSave={saveField("service_id")} />
+      {dealAmountField}
       {lead.deal_amount > 0 && <Field label="Оплачено / остаток">{fmtMoneyShort(lead.paid_amount)} / {fmtMoneyShort(lead.remaining_amount)}</Field>}
       {streak > 0 && <Field label="Недозвоны подряд"><span style={{ color: "var(--red)" }}>📵×{streak}</span></Field>}
-      {lead.comment && <div style={{ marginTop: 8, padding: "8px 10px", background: "var(--bg3)", borderRadius: 8, fontSize: 12, color: "var(--text2)", whiteSpace: "pre-wrap" }}>{lead.comment}</div>}
+      <InlineField label="Комментарий" kind="textarea" value={lead.comment} onSave={saveField("comment")} />
 
       <Fold title="Контакты и атрибуция">
-        <Field label="Instagram">{lead.instagram}</Field>
-        <Field label="Email">{lead.email}</Field>
-        <Field label="Адрес">{lead.address}</Field>
-        <Field label="Сайт">{lead.website ? <a href={lead.website} target="_blank" rel="noreferrer">{lead.website}</a> : null}</Field>
-        <Field label="Отрасль">{lead.industry}</Field>
-        <Field label="Сотрудников">{lead.employees_count}</Field>
+        {txt("instagram", "Instagram")}
+        {txt("email", "Email")}
+        {txt("address", "Адрес")}
+        {txt("website", "Сайт", lead.website ? (
+          <a href={lead.website} target="_blank" rel="noreferrer" title="Открыть сайт" aria-label="Открыть сайт">↗</a>
+        ) : null)}
+        {txt("industry", "Отрасль")}
+        <InlineField label="Сотрудников" kind="number" value={lead.employees_count != null ? String(lead.employees_count) : ""} onSave={saveField("employees_count")} />
+        {txt("source_detail", "Уточнение источника")}
+        {txt("content_ref", "Рилс / контент")}
+        {txt("utm_source", "UTM source")}
+        {txt("utm_medium", "UTM medium")}
+        {txt("utm_campaign", "UTM campaign")}
+        {txt("utm_content", "UTM content")}
+        {txt("external_lead_id", "Внешний ID лида")}
         <Field label="Создан">{fmtDate(lead.created_at)}</Field>
         <Field label="Обновлён">{fmtDate(lead.updated_at)}</Field>
       </Fold>
 
       <Fold title={`Финансы и график оплат${lead.deal_amount > 0 ? ` · ${dealStatus.label}` : ""}`}>
-        <Field label="Сумма сделки">{fmtMoney(lead.deal_amount)}</Field>
+        {dealAmountField}
         <Field label="Оплачено">{fmtMoney(lead.paid_amount)}</Field>
         <Field label="Остаток">{fmtMoney(lead.remaining_amount)}</Field>
         {lead.active_deal && (
@@ -363,14 +422,13 @@ export default function LeadDetailPage() {
   );
 
   return (
-    <Shell title={lead.client_name}>
+    <Shell title="Отдел продаж">
       {card}
       <div className="lead-layout">
         <div className="lead-col-right">{right}</div>
         <div className="lead-col-left">{left}</div>
       </div>
 
-      {editModal && <EditLeadModal lead={lead} sources={sources} services={services} users={users} onClose={() => setEditModal(false)} onSaved={reload} />}
       {actModal && <AddActivityModal leadId={lead.id} users={users} onClose={() => setActModal(false)} onAdded={reload} />}
       {fileModal && <AddFileModal leadId={lead.id} onClose={() => setFileModal(false)} onAdded={reload} />}
       {transition && (
@@ -383,6 +441,16 @@ export default function LeadDetailPage() {
           }}
           users={users} rejectReasons={rejectReasons} onConfirm={handleTransitionConfirm} onCancel={() => setTransition(null)} />
       )}
+      <Modal open={dupeAsk !== null} title="Дубль номера" width={420} onClose={() => answerDuplicate("cancel")}
+        footer={<>
+          <Button variant="ghost" onClick={() => answerDuplicate("cancel")}>Отмена</Button>
+          <Button variant="ghost" onClick={() => answerDuplicate("open")}>Открыть его</Button>
+          <Button onClick={() => answerDuplicate("save")}>Всё равно сохранить</Button>
+        </>}>
+        <p style={{ margin: 0, fontSize: 14, color: "var(--text2)", lineHeight: 1.6 }}>
+          Этот номер уже у лида {dupeAsk?.existing.client_name}
+        </p>
+      </Modal>
       <ConfirmModal open={ignoreConfirm} title="Это не лид?" variant="danger" confirmLabel="Не лид"
         message="Номер помечается как «Не лид»: новые сообщения с него не будут создавать лиды. Если этот лид создан автоматически из WhatsApp, он уйдёт в архив."
         onCancel={() => setIgnoreConfirm(false)}
@@ -418,6 +486,9 @@ export default function LeadDetailPage() {
           .lead-layout { grid-template-columns: 1fr; }
           .lead-col-left, .lead-col-right { grid-column: 1; grid-row: auto; }
         }
+        .inline-field-pencil { opacity: 0; transition: opacity .12s; }
+        .inline-field:hover .inline-field-pencil, .inline-field-view:focus-visible .inline-field-pencil { opacity: 1; }
+        @media (hover: none) { .inline-field-pencil { opacity: 1; } }
         .form-label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text2); font-weight: 500; }
         .form-input { background: var(--bg3); border: 1px solid var(--border); border-radius: 7px; padding: 7px 10px; font-size: 13px; color: var(--text); font-family: inherit; outline: none; width: 100%; box-sizing: border-box; }
         .form-input:focus { border-color: var(--primary); }

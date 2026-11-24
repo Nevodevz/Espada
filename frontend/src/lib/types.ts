@@ -38,6 +38,8 @@ export interface LeadStage {
   is_archived: boolean;
   /** Source of truth for stage behaviour; never inferred from the name. */
   kind: StageKind;
+  /** Active leads on the stage; only present with `with_counts`. */
+  lead_count?: number;
 }
 
 export interface RejectReason {
@@ -705,24 +707,14 @@ export interface LeadBoardCard extends Lead {
   scheduled_meeting: ScheduledMeeting | null;
   /** Unread WhatsApp messages from this client. */
   whatsapp_unread: number;
+  /** Working minutes the lead has waited for a first touch; null once touched or closed. */
+  waiting_minutes: number | null;
 }
 
 /** Board columns are funnel stages; won/lost stages are drop zones. */
 export interface LeadBoardData {
   stages: LeadStage[];
   leads: LeadBoardCard[];
-}
-
-export interface FunnelStats {
-  new_leads: number;
-  meetings_stage: number;
-  contracts_sent: number;
-  waiting_payment: number;
-  closed_won: number;
-  conversion_pct: number;
-  deals_sum: number;
-  paid_sum: number;
-  remaining_sum: number;
 }
 
 export interface FunnelResponse {
@@ -802,18 +794,6 @@ export interface LeadListResponse {
   total: number;
 }
 
-export interface LeadStats {
-  leads_today: number;
-  leads_period: number;
-  meetings_period: number;
-  closed_won: number;
-  conversion_pct: number;
-  deals_sum: number;
-  paid_sum: number;
-  remaining_sum: number;
-  cpl: number | null;
-}
-
 /** Shared filter state for the two views of the «Лиды и воронка» page. */
 export interface LeadFilters {
   search: string;
@@ -846,12 +826,6 @@ export const ACTIVITY_TYPES = [
 export const FILE_TYPES = ["КП", "Договор", "ТЗ", "Счёт", "Бриф", "Другое"] as const;
 
 // ===== END Leads =====
-
-export interface SalesSummary {
-  setters: { user: User | null; totals: Record<string, number> }[];
-  closers: { user: User | null; counts: Record<string, number>; total: number }[];
-  col_defs: { key: string; label: string }[];
-}
 
 // ===== Analytics =====
 
@@ -1152,4 +1126,93 @@ export interface FeedItem {
 export interface FeedPage {
   items: FeedItem[];
   next_before: string | null;
+}
+
+export interface UnclaimedLead {
+  id: number;
+  client_name: string;
+  phone: string | null;
+  source_name: string | null;
+  created_at: string;
+  /** Working minutes since creation; null once touched or past the early stages. */
+  waiting_minutes: number | null;
+}
+
+export interface AwaitingReplyItem {
+  lead_id: number;
+  client_name: string;
+  last_body: string | null;
+  last_at: string;
+}
+
+export interface SalesToday {
+  unclaimed: UnclaimedLead[];
+  awaiting_reply: AwaitingReplyItem[];
+}
+
+// ── «Показатели» (GET /api/sales-hub/metrics) ──────────────────
+export interface SalesMetricsTotals {
+  leads: number;
+  meetings_booked: number;
+  meetings_held: number;
+  sales: number;
+  conversion_pct: number;
+  deals_amount: number;
+  paid: number;
+  remaining: number;
+}
+
+export interface SalesMetricsSource {
+  source_id: number | null;
+  name: string;
+  count: number;
+  pct: number;
+}
+
+export interface SetterMetricsRow {
+  user_id: number;
+  name: string;
+  touches: number;
+  calls_connected: number;
+  calls_no_answer: number;
+  booked: number;
+  held: number;
+  /** Average working minutes to first touch; null when no lead was touched. */
+  avg_first_touch_minutes: number | null;
+  untouched: number;
+}
+
+export type CloserOutcome = "scheduled" | "closed" | "minus" | "push" | "not_held";
+
+export interface CloserMetricsRow {
+  user_id: number;
+  name: string;
+  by_status: Record<CloserOutcome, number>;
+  sales: number;
+  sales_amount: number;
+}
+
+export interface LostReasonRow {
+  reason_id: number | null;
+  name: string;
+  count: number;
+  pct: number;
+  by_user: { user_id: number | null; name: string; count: number }[];
+}
+
+export interface SalesMetrics {
+  totals: SalesMetricsTotals;
+  funnel: FunnelPoint[];
+  daily: DailyPoint[];
+  sources: SalesMetricsSource[];
+  employees: { setters: SetterMetricsRow[]; closers: CloserMetricsRow[] };
+  lost_reasons: LostReasonRow[];
+}
+
+export interface SalesMetricsQuery {
+  date_from: string;
+  date_to: string;
+  source_id?: number;
+  service_id?: number;
+  user_id?: number;
 }

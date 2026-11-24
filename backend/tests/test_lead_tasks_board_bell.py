@@ -94,7 +94,7 @@ def test_old_next_action_notifications_gone(client, db, lead, staff, sales):
 
 def test_no_task_bell_and_analytics(client, db, lead, staff, sales, stages):
     ids = bell(client, staff)
-    assert "leads_no_task" in ids and ids["leads_no_task"]["link"] == "/leads/board?no_task=true"
+    assert "leads_no_task" in ids and ids["leads_no_task"]["link"] == "/leads?view=board&no_task=true"
     for i in range(6):
         new_lead(db, stages, f"Пустой {i}", f"+996 700 2000{i:02d}")
     add_task(db, lead, now() - timedelta(hours=1), staff)

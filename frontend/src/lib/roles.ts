@@ -21,3 +21,8 @@ export function closerOptions<T extends Pick<User, "id" | "name" | "is_closer" |
   }
   return list;
 }
+
+/** Sales head = admin, founder, or the «Руководитель продаж» position. */
+export function isSalesHead(u: Pick<User, "role" | "is_founder" | "position">): boolean {
+  return u.role === "admin" || Boolean(u.is_founder) || u.position === "Руководитель продаж";
+}

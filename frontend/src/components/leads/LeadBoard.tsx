@@ -2,15 +2,19 @@
 
 import { createContext, useContext, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
-  DndContext, DragOverlay, PointerSensor, KeyboardSensor, useSensor, useSensors,
+  DndContext, DragOverlay, MouseSensor, TouchSensor, KeyboardSensor, useSensor, useSensors,
   pointerWithin, closestCenter, useDraggable, useDroppable,
   type CollisionDetection, type DragEndEvent,
 } from "@dnd-kit/core";
+import type { MouseEvent as ReactMouseEvent, TouchEvent as ReactTouchEvent } from "react";
 import { Button } from "@/components/ui";
 import { StageActionMenu } from "./StageActionMenu";
 import { cardsForStage, cardsWithoutColumn, splitStages } from "./lead-board-layout";
 import { fmtDateTime, fmtMoneyShort } from "@/lib/format";
+import { WAITING_COLOR, formatWaitingMinutes, waitingLevel } from "@/lib/waiting";
+import { isInteractiveTarget, opensInNewTab } from "@/lib/interactiveTarget";
 import { TASK_KIND_LABELS } from "@/lib/leadTasks";
 import type { LeadBoardCard, LeadBoardData, LeadStage } from "@/lib/types";
 
@@ -23,6 +27,19 @@ interface Props {
   showClosed?: boolean;
   /** «Взять себе» on a card without a setter (shown only when provided). */
   onTake?: (card: LeadBoardCard) => void;
+}
+
+class CardMouseSensor extends MouseSensor {
+  static activators = [{
+    eventName: "onMouseDown" as const,
+    handler: ({ nativeEvent }: ReactMouseEvent) => !isInteractiveTarget(nativeEvent.target as Element | null) && nativeEvent.button === 0,
+  }];
+}
+class CardTouchSensor extends TouchSensor {
+  static activators = [{
+    eventName: "onTouchStart" as const,
+    handler: ({ nativeEvent }: ReactTouchEvent) => !isInteractiveTarget(nativeEvent.target as Element | null) && nativeEvent.touches.length === 1,
+  }];
 }
 
 const TakeContext = createContext<Props["onTake"]>(undefined);
@@ -54,6 +71,12 @@ function CardContent({ card }: { card: LeadBoardCard }) {
         </span>
       )}
     </div>
+    {card.waiting_minutes != null && (
+      <div className="lead-board-meta" style={{ color: WAITING_COLOR[waitingLevel(card.waiting_minutes)], fontWeight: 600 }}
+        title="Ждёт первого касания, в рабочих минутах (10:00–19:00, пн–пт)">
+        ждёт {formatWaitingMinutes(card.waiting_minutes)}
+      </div>
+    )}
     {card.company_name && <div className="lead-board-company">{card.company_name}</div>}
     {card.service && <div className="lead-board-meta">{card.service.name}</div>}
     {card.deal_amount > 0 && <div className="lead-board-money">{fmtMoneyShort(card.deal_amount)}</div>}
@@ -72,12 +95,25 @@ function LeadCard({ card, stages, disabled, onDropCard }: {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, isDragging } = useDraggable({
     id: `lead-${card.id}`, disabled, data: { leadId: card.id },
   });
-  return <article ref={setNodeRef} className="lead-board-card" data-lead-id={card.id} style={{ opacity: isDragging ? 0.35 : 1 }}>
+  const router = useRouter();
+  const open = () => router.push(`/leads/${card.id}`);
+  // Whole card is the drag activator and opens the lead on click / Enter (Space drags). dnd-kit swallows the click after a drag.
+  return <article ref={(node) => { setNodeRef(node); setActivatorNodeRef(node); }} className="lead-board-card" data-lead-id={card.id}
+    data-draggable={disabled ? undefined : "true"} style={{ opacity: isDragging ? 0.35 : 1, cursor: "pointer" }}
+    {...attributes} {...listeners} role="group" aria-roledescription="перетаскиваемая карточка"
+    onClick={(e) => {
+      if (isDragging || isInteractiveTarget(e.target as Element)) return;
+      if (opensInNewTab(e)) window.open(`/leads/${card.id}`, "_blank");
+      else open();
+    }}
+    onKeyDown={(e) => {
+      listeners?.onKeyDown?.(e);
+      if (e.key === "Enter" && e.target === e.currentTarget && !isDragging) { e.preventDefault(); open(); }
+    }}>
     <div className="lead-board-card-tools">
-      <button ref={setActivatorNodeRef} className="lead-board-handle" disabled={disabled}
-        aria-label={`Перетащить лид «${card.client_name}»`} title="Перетащить лид" {...attributes} {...listeners}>
+      <span className="lead-board-handle" aria-hidden="true">
         <span className="material-symbols-outlined">drag_indicator</span>
-      </button>
+      </span>
       <StageActionMenu currentStageId={card.stage_id} stages={stages} disabled={disabled}
         label={`Перевести лид «${card.client_name}»`} onSelect={(stage) => onDropCard(card, stage)} />
     </div>
@@ -133,7 +169,11 @@ function DropZone({ stage, count, disabled }: { stage: LeadStage; count: number;
 
 export function LeadBoard({ data, disabled, onDropCard, showClosed = false, onTake }: Props) {
   const [activeCard, setActiveCard] = useState<LeadBoardCard | null>(null);
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 7 } }), useSensor(KeyboardSensor));
+  const sensors = useSensors(
+    useSensor(CardMouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(CardTouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
+    useSensor(KeyboardSensor, { keyboardCodes: { start: ["Space"], cancel: ["Escape"], end: ["Space", "Enter", "Tab"] } }),
+  );
   const split = splitStages(data.stages);
   const allStages = [...split.columns, ...split.dropZones];
   const columns = showClosed ? allStages : split.columns;
@@ -181,9 +221,11 @@ export function LeadBoard({ data, disabled, onDropCard, showClosed = false, onTa
       .lead-board-card { padding:12px; border:1px solid var(--border); border-radius:10px; background:var(--bg2); box-shadow:var(--shadow-sm); color:var(--text); }
       .lead-board-card-tools { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
       .lead-board-action { min-width:0; flex:1; border:1px solid var(--border); border-radius:5px; padding:4px; background:var(--bg2); color:var(--text3); font-size:11px; }
-      .lead-board-handle { display:flex; justify-content:center; align-items:center; background:none; border:0; color:var(--text3); padding:2px; border-radius:4px; cursor:grab; touch-action:none; }
+      .lead-board-handle { display:flex; justify-content:center; align-items:center; background:none; border:0; color:var(--text3); padding:2px; border-radius:4px; cursor:grab; }
+      .lead-board-card[data-draggable] { cursor:grab; -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
+      .lead-board-card[data-draggable] input, .lead-board-card[data-draggable] select, .lead-board-card[data-draggable] textarea { -webkit-user-select:text; user-select:text; }
       .lead-board-handle .material-symbols-outlined { font-size:18px; }
-      .lead-board-handle:focus-visible { outline:2px solid var(--primary); }
+      .lead-board-card:focus-visible { outline:2px solid var(--primary); }
       .lead-board-title-row { display:flex; align-items:flex-start; gap:8px; }
       .lead-board-title-row .lead-board-title { flex:1; }
       .lead-board-unread { flex-shrink:0; border-radius:10px; padding:1px 7px; background:var(--green); color:#fff; font-size:11px; font-weight:600; }

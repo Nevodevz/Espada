@@ -3,7 +3,7 @@
 Moving a card is a stage change and goes through `PATCH /api/leads/{id}/stage`,
 so every stage side effect (meeting, deal, payment schedule) applies.
 """
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict
@@ -16,13 +16,11 @@ from sqlalchemy import func
 
 from app.models import Lead, LeadStage, LeadStatus, Meeting, MeetingStatus, User, WhatsAppChat
 from app.routers.leads import LeadOut, ScheduledMeetingOut, task_extras, _apply_list_filters, _deals_by_lead, _eager_lead, _lead_out
-from app.services.lead_board import board_sort_key
+from app.services.lead_board import apply_board_toggles, board_sort_key, task_state_matches
+from app.services.first_touch import early_stage_ids, first_touch_at, is_early, working_minutes
 from app.services.leads import active_stages
 
 router = APIRouter(prefix="/api/lead-board", tags=["lead-board"])
-
-CLOSED_KINDS = ("won", "lost")
-
 
 class StageOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -36,11 +34,16 @@ class StageOut(BaseModel):
 class CardOut(LeadOut):
     scheduled_meeting: ScheduledMeetingOut | None = None
     whatsapp_unread: int = 0
+    waiting_minutes: int | None = None
 
 
 class BoardOut(BaseModel):
     stages: list[StageOut]
     leads: list[CardOut]
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 def _unread_by_lead(db: Session, lead_ids: list[int]) -> dict[int, int]:
@@ -98,26 +101,22 @@ def get_board(
         date_from=date_from.isoformat() if date_from else None,
         date_to=date_to.isoformat() if date_to else None,
     ).filter(Lead.status == LeadStatus.active)
-    if mine:
-        query = query.filter(or_(Lead.setter_id == user.id, Lead.closer_id == user.id))
-    if unassigned:
-        query = query.filter(Lead.setter_id.is_(None))
-    if not show_closed:
-        closed_ids = [s.id for s in db.query(LeadStage.id).filter(LeadStage.kind.in_(CLOSED_KINDS))]
-        if closed_ids:
-            query = query.filter(or_(Lead.stage_id.is_(None), Lead.stage_id.notin_(closed_ids)))
+    query = apply_board_toggles(db, query, user, mine=mine, unassigned=unassigned, show_closed=show_closed)
 
     rows = query.all()
     ids = [lead.id for lead in rows]
     unread = _unread_by_lead(db, ids)
     nxt, streaks = task_extras(db, ids)
-    if overdue:
-        rows = [lead for lead in rows if lead.id in nxt and nxt[lead.id].overdue]
-    if no_task:
-        rows = [lead for lead in rows if lead.id not in nxt]
+    if overdue or no_task:
+        rows = [lead for lead in rows if task_state_matches(lead.id, nxt, overdue=overdue, no_task=no_task)]
     leads = sorted(rows, key=lambda lead: board_sort_key(lead, unread.get(lead.id, 0), nxt.get(lead.id)))
     deals = _deals_by_lead(db, [lead.id for lead in leads])
     meetings = _scheduled_meetings(db, [lead.id for lead in leads])
+    now = _now()
+    early = early_stage_ids(db)
+    early_ids = [l.id for l in leads if is_early(l.stage_id, early)]
+    touched = first_touch_at(db, early_ids)
+    waiting_set = set(early_ids) - set(touched)
     cards = []
     for lead in leads:
         meeting = meetings.get(lead.id)
@@ -125,6 +124,7 @@ def get_board(
             **_lead_out(db, lead, deals.get(lead.id)).model_dump(),
             scheduled_meeting=ScheduledMeetingOut.model_validate(meeting) if meeting else None,
             whatsapp_unread=unread.get(lead.id, 0),
+            waiting_minutes=working_minutes(lead.created_at, now) if lead.id in waiting_set else None,
         ))
         cards[-1].next_task = nxt.get(lead.id)
         cards[-1].no_answer_streak = streaks.get(lead.id, 0)

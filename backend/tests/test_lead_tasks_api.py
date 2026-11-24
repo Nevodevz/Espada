@@ -163,7 +163,7 @@ def test_unassigned_tasks_in_manager_bell(client, db, lead, admin, sales):
                     assignee_id=None, status="open"))
     db.commit()
     items = {n["id"]: n for n in client.get("/api/notifications", headers=auth_headers(admin)).json()["items"]}
-    assert "tasks_unassigned" in items and items["tasks_unassigned"]["link"] == "/tasks?assignee=none"
+    assert "tasks_unassigned" in items and items["tasks_unassigned"]["link"] == "/sales/today?assignee=none"
 
 
 def test_no_tasks_on_closed_or_archived_lead(client, db, lead, staff, stages, sales):
@@ -173,3 +173,20 @@ def test_no_tasks_on_closed_or_archived_lead(client, db, lead, staff, stages, sa
     lead.stage_id, lead.status = stages["Созвон"].id, LeadStatus.archived
     db.commit()
     assert create(client, staff, lead.id).status_code == 409
+
+
+def test_sales_head_position_gets_manager_bell(client, db, lead, stages, sales):
+    head = User(name="РОП", email="rop@test.kg", password_hash=hash_password("x"),
+                role=Role.staff, position="Руководитель продаж", is_active=True)
+    db.add(head)
+    sales.members.append(head)
+    db.add(LeadTask(lead_id=lead.id, kind="call", due_at=datetime.now(timezone.utc) - timedelta(days=1),
+                    assignee_id=None, status="open"))
+    from app.models import Lead
+    db.add(Lead(client_name="Чужой", phone="+996 700 999999", stage_id=stages["Созвон"].id,
+                status=LeadStatus.active))
+    db.commit()
+    items = {n["id"]: n for n in client.get("/api/notifications", headers=auth_headers(head)).json()["items"]}
+    assert "tasks_unassigned" in items
+    # sees all open leads without a task, not only own (head is not setter/closer of «Чужой»)
+    assert "leads_no_task" in items and "1" in items["leads_no_task"]["title"]

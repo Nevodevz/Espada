@@ -91,3 +91,34 @@ def test_unauthenticated_requests_are_rejected(client):
 
 def test_invalid_date_filter_is_rejected(client, admin):
     assert client.get("/api/lead-board?date_from=not-a-date", headers=auth_headers(admin)).status_code == 422
+
+
+def test_list_toggles_match_board(client, db, admin, staff, stages, lead):
+    from app.models import LeadTask
+
+    now = datetime.now(timezone.utc)
+    late = add_lead(db, stages["Созвон"], "Просрочен", setter=staff)
+    future = add_lead(db, stages["Созвон"], "Будущий", setter=staff)
+    bare = add_lead(db, stages["Созвон"], "Без задачи")
+    won = add_lead(db, stages["Оплачено"], "Оплатил")
+    db.add_all([
+        LeadTask(lead_id=late.id, kind="call", due_at=now - timedelta(hours=2), status="open"),
+        LeadTask(lead_id=future.id, kind="call", due_at=now + timedelta(days=2), status="open"),
+    ])
+    db.commit()
+
+    def listed(**params):
+        r = client.get("/api/leads", params={**params, "limit": 100}, headers=auth_headers(admin))
+        assert r.status_code == 200, r.text
+        return {i["id"] for i in r.json()["items"]}
+
+    for params in (
+        {"overdue": True}, {"no_task": True}, {"unassigned": True},
+        {"mine": True}, {"show_closed": False}, {"show_closed": True},
+    ):
+        # The board hides closed leads by default, so compare with the flag stated explicitly.
+        params = {"show_closed": False, **params}
+        assert listed(**params) == set(ids(board(client, admin, **params))), params
+    assert listed(overdue=True) == {late.id}
+    assert bare.id in listed(no_task=True) and late.id not in listed(no_task=True)
+    assert won.id in listed() and won.id not in listed(show_closed=False)

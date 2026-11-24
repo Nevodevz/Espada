@@ -5,6 +5,7 @@ import type {
 } from "./types";
 
 import { readStoredValue } from "./storage";
+import { apiErrorMessage } from "./apiError";
 
 const TOKEN_KEY = "espada_token";
 const LEGACY_TOKEN_KEY = "nevodevs_token";
@@ -41,7 +42,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: "Ошибка запроса" }));
-    throw new Error(err.detail || `HTTP ${res.status}`);
+    // `detail` stays on the error: a 409 on POST /leads carries the existing lead.
+    throw Object.assign(new Error(apiErrorMessage(err?.detail, res.status)), { status: res.status, detail: err?.detail });
   }
   if (res.status === 204) return undefined as T;
   return res.json();
@@ -160,11 +162,13 @@ export const api = {
   salesColumns: () => request<ColumnDef[]>("/sales/columns"),
   addSalesColumn: (data: { label: string; kind?: string }) => request<ColumnDef>("/sales/columns", { method: "POST", body: JSON.stringify(data) }),
   deleteSalesColumn: (id: number) => request<void>(`/sales/columns/${id}`, { method: "DELETE" }),
-  salesRecords: (f?: { user_id?: number; date_from?: string; date_to?: string }) => {
+  salesRecords: (f?: { user_id?: number; date_from?: string; date_to?: string; limit?: number; offset?: number }) => {
     const p = new URLSearchParams();
     if (f?.user_id) p.set("user_id", String(f.user_id));
     if (f?.date_from) p.set("date_from", f.date_from);
     if (f?.date_to) p.set("date_to", f.date_to);
+    if (f?.limit) p.set("limit", String(f.limit));
+    if (f?.offset) p.set("offset", String(f.offset));
     const qs = p.toString();
     return request<SalesRecord[]>(`/sales/records${qs ? "?" + qs : ""}`);
   },
@@ -271,10 +275,10 @@ export const settingsApi = {
   reorderService: (id: number, position: number) => request<import("./types").ServiceItem[]>(`/settings/services/${id}/reorder?new_position=${position}`, { method: "POST" }),
 
   // Stages — archived ones are excluded unless explicitly requested
-  listStages: (includeArchived = false) =>
-    request<import("./types").LeadStage[]>(
-      `/settings/stages${includeArchived ? "?include_archived=true" : ""}`,
-    ),
+  listStages: (includeArchived = false, withCounts = false) => {
+    const params = [includeArchived && "include_archived=true", withCounts && "with_counts=true"].filter(Boolean);
+    return request<import("./types").LeadStage[]>(`/settings/stages${params.length ? `?${params.join("&")}` : ""}`);
+  },
   archiveStage: (id: number) =>
     request<import("./types").LeadStage>(`/settings/stages/${id}/archive`, { method: "POST" }),
   createStage: (data: any) => request<import("./types").LeadStage>("/settings/stages", { method: "POST", body: JSON.stringify(data) }),
@@ -307,6 +311,8 @@ export interface LeadQuery {
   setter_id?: number | string; closer_id?: number | string;
   stage_id?: number | string; status?: string;
   date_from?: string; date_to?: string; search?: string;
+  /** Only leads a meeting can still be booked for: not archived, not won/lost. */
+  open_only?: boolean;
   limit?: number; offset?: number;
 }
 
@@ -324,6 +330,7 @@ function leadQueryString(f?: LeadQuery): string {
     const v = f?.[key];
     if (v !== undefined && v !== null && v !== "") p.set(key, String(v));
   }
+  if (f?.open_only) p.set("open_only", "true");
   if (f?.limit !== undefined) p.set("limit", String(f.limit));
   if (f?.offset) p.set("offset", String(f.offset));
   const qs = p.toString();
@@ -338,31 +345,35 @@ export function boardQueryString(query?: BoardQuery): string {
   return qs ? "?" + qs : "";
 }
 
+/** List query: like the board's, but `show_closed=false` is sent explicitly (the list shows closed leads by default). */
+export function listQueryString(query?: BoardQuery): string {
+  const p = new URLSearchParams(boardQueryString(query).replace(/^\?/, ""));
+  if (query?.show_closed === false) p.set("show_closed", "false");
+  const qs = p.toString();
+  return qs ? "?" + qs : "";
+}
+
 export const leadBoardApi = {
   get: (query?: BoardQuery) => request<import("./types").LeadBoardData>(`/lead-board${boardQueryString(query)}`),
 };
 
 export const leadApi = {
-  stats: (f?: { date_from?: string; date_to?: string }) => {
-    const p = new URLSearchParams();
-    if (f?.date_from) p.set("date_from", f.date_from);
-    if (f?.date_to) p.set("date_to", f.date_to);
-    const qs = p.toString();
-    return request<import("./types").LeadStats>(`/leads/stats${qs ? "?" + qs : ""}`);
-  },
-  list: (f?: LeadQuery) =>
-    request<import("./types").LeadListResponse>(`/leads${leadQueryString(f)}`),
+  list: (f?: BoardQuery) =>
+    request<import("./types").LeadListResponse>(`/leads${listQueryString(f)}`),
   get: (id: number) => request<import("./types").LeadDetail>(`/leads/${id}`),
   create: (data: any) => request<import("./types").Lead>("/leads", { method: "POST", body: JSON.stringify(data) }),
   update: (id: number, data: any) => request<import("./types").Lead>(`/leads/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  findDuplicate: (phone: string, excludeId?: number) => {
+    const p = new URLSearchParams({ phone });
+    if (excludeId != null) p.set("exclude_id", String(excludeId));
+    return request<{ existing: import("./apiError").ExistingLead | null }>(`/leads/duplicates?${p}`);
+  },
   archive: (id: number) => request<import("./types").Lead>(`/leads/${id}/archive`, { method: "POST" }),
   changeStage: (id: number, to_stage_id: number, comment = "", extra_data: Record<string, any> = {}) =>
     request<import("./types").Lead>(`/leads/${id}/stage`, { method: "PATCH", body: JSON.stringify({ to_stage_id, comment, extra_data }) }),
   // Funnel accepts the same filter set as the list — the two views never diverge.
   funnel: (f?: LeadQuery) =>
     request<import("./types").FunnelResponse>(`/leads/funnel${leadQueryString(f)}`),
-  funnelStats: (f?: LeadQuery) =>
-    request<import("./types").FunnelStats>(`/leads/funnel-stats${leadQueryString(f)}`),
   addActivity: (id: number, data: { activity_type: string; channel?: string; description?: string; responsible_id?: number }) =>
     request<import("./types").LeadActivity>(`/leads/${id}/activities`, { method: "POST", body: JSON.stringify(data) }),
   addFile: (id: number, data: { name: string; url: string; file_type?: string }) =>
@@ -529,17 +540,10 @@ export const meetingApi = {
     return request<import("./types").Meeting[]>(`/meetings${qs ? "?" + qs : ""}`);
   },
   get: (id: number) => request<import("./types").Meeting>(`/meetings/${id}`),
-  create: (data: any) => request<import("./types").Meeting>("/meetings", { method: "POST", body: JSON.stringify(data) }),
+  create: (data: { setter_id?: number | null; [k: string]: any }) => request<import("./types").Meeting>("/meetings", { method: "POST", body: JSON.stringify(data) }),
   update: (id: number, data: any) => request<import("./types").Meeting>(`/meetings/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   setStatus: (id: number, status: string) => request<import("./types").Meeting>(`/meetings/${id}/status?status=${status}`, { method: "PATCH" }),
   delete: (id: number) => request<void>(`/meetings/${id}`, { method: "DELETE" }),
-  summary: (f?: { date_from?: string; date_to?: string }) => {
-    const p = new URLSearchParams();
-    if (f?.date_from) p.set("date_from", f.date_from);
-    if (f?.date_to)   p.set("date_to",   f.date_to);
-    const qs = p.toString();
-    return request<import("./types").SalesSummary>(`/meetings/summary/all${qs ? "?" + qs : ""}`);
-  },
 };
 
 // API key management
@@ -581,6 +585,17 @@ async function whatsappForm<T>(path: string, form: FormData): Promise<T> {
   }
   return res.json();
 }
+
+export const salesHubApi = {
+  today: () => request<import("./types").SalesToday>("/sales-hub/today"),
+  metrics: (q: import("./types").SalesMetricsQuery) => {
+    const p = new URLSearchParams({ date_from: q.date_from, date_to: q.date_to });
+    if (q.source_id) p.set("source_id", String(q.source_id));
+    if (q.service_id) p.set("service_id", String(q.service_id));
+    if (q.user_id) p.set("user_id", String(q.user_id));
+    return request<import("./types").SalesMetrics>(`/sales-hub/metrics?${p.toString()}`);
+  },
+};
 
 export const whatsappApi = {
   access: () => request<{ can_use: boolean }>("/whatsapp/access"),

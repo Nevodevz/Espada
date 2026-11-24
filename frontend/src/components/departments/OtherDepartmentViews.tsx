@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Avatar } from "@/components/Avatar";
 import { Modal } from "@/components/Modal";
 import { BoardView } from "@/components/BoardView";
-import { ColumnsModal } from "./SalesDepartmentView";
+import { ColumnsModal } from "./ColumnsModal";
 import { meetingApi } from "@/lib/api";
 import { useApp } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";

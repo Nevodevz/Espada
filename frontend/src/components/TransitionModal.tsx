@@ -6,6 +6,7 @@ import { Button, FormField, Input, Select } from "@/components/ui";
 import type { LeadStage, User, RejectReason, StageKind, ScheduledMeeting } from "@/lib/types";
 import { bishkekDateTimeParts } from "@/lib/format";
 import { closerOptions } from "@/lib/roles";
+import { CloserSlots } from "@/components/meetings/CloserSlots";
 
 /** Stage behaviour comes from the stored `kind` (backend `LeadStage.kind`). */
 export function stageKind(s: Pick<LeadStage, "kind">): StageKind {
@@ -120,8 +121,11 @@ export function TransitionModal({
     setForm((prev) => ({ ...prev, [key]: val }));
   }
 
+  const needsReason = kind === "lost" && !Number(form.reject_reason_id);
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (needsReason) return;
     const extra: Record<string, unknown> = { ...form };
     if (kind === "won") extra.paid_amount = Number(form.paid_amount) || 0;
     if (kind === "contract" || kind === "waiting_payment") extra.amount = Number(form.amount) || 0;
@@ -214,6 +218,15 @@ export function TransitionModal({
                 ))}
               </Select>
             </FormField>
+            {Number(form.closer_id) > 0 && form.meeting_date ? (
+              <CloserSlots
+                closerId={Number(form.closer_id)}
+                day={String(form.meeting_date)}
+                value={String(form.meeting_time ?? "")}
+                onPick={(t) => set("meeting_time", t)}
+                excludeMeetingId={card.scheduled_meeting?.id ?? null}
+              />
+            ) : null}
           </>
         )}
 
@@ -393,7 +406,7 @@ export function TransitionModal({
 
         {kind === "lost" && (
           <>
-            <FormField label="Причина отказа">
+            <FormField label="Причина отказа *">
               <Select
                 value={String(form.reject_reason_id || "")}
                 onChange={(e) => set("reject_reason_id", Number(e.target.value))}
@@ -448,7 +461,7 @@ export function TransitionModal({
           <Button type="button" variant="ghost" onClick={onCancel} disabled={busy}>
             Отмена
           </Button>
-          <Button type="submit" variant="primary" loading={busy} disabled={busy}>
+          <Button type="submit" variant="primary" loading={busy} disabled={busy || needsReason}>
             {confirmLabel}
           </Button>
         </div>
