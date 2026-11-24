@@ -8,6 +8,7 @@ from app.models import (
     LeadStatus, MeetingStatus, PaymentStatus,
 )
 from app.services import deals as deal_service
+from app.services.whatsapp.phone import normalize_phone
 
 
 def create_lead_activity(
@@ -477,3 +478,19 @@ def get_lead_timeline(db: Session, lead: Lead) -> list[dict[str, Any]]:
 
     events.sort(key=lambda e: e.get("at") or "")
     return events
+
+
+def find_duplicate_lead(db: Session, phones: list[str], exclude_id: int | None = None) -> Lead | None:
+    """First active lead whose phone or whatsapp matches any of `phones` by digits."""
+    wanted = {normalize_phone(p) for p in phones}
+    wanted.discard("")
+    if not wanted:
+        return None
+    q = db.query(Lead).filter(Lead.status == LeadStatus.active)
+    if exclude_id is not None:
+        q = q.filter(Lead.id != exclude_id)
+    q = q.filter(((Lead.phone != "") & Lead.phone.isnot(None)) | ((Lead.whatsapp != "") & Lead.whatsapp.isnot(None)))
+    for lead in q.order_by(Lead.id):
+        if normalize_phone(lead.phone) in wanted or normalize_phone(lead.whatsapp) in wanted:
+            return lead
+    return None

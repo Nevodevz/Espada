@@ -363,6 +363,11 @@ export const leadApi = {
   get: (id: number) => request<import("./types").LeadDetail>(`/leads/${id}`),
   create: (data: any) => request<import("./types").Lead>("/leads", { method: "POST", body: JSON.stringify(data) }),
   update: (id: number, data: any) => request<import("./types").Lead>(`/leads/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  findDuplicate: (phone: string, excludeId?: number) => {
+    const p = new URLSearchParams({ phone });
+    if (excludeId != null) p.set("exclude_id", String(excludeId));
+    return request<{ existing: import("./apiError").ExistingLead | null }>(`/leads/duplicates?${p}`);
+  },
   archive: (id: number) => request<import("./types").Lead>(`/leads/${id}/archive`, { method: "POST" }),
   changeStage: (id: number, to_stage_id: number, comment = "", extra_data: Record<string, any> = {}) =>
     request<import("./types").Lead>(`/leads/${id}/stage`, { method: "PATCH", body: JSON.stringify({ to_stage_id, comment, extra_data }) }),

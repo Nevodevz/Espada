@@ -17,12 +17,15 @@ export function apiErrorMessage(detail: unknown, status: number): string {
   return fallback;
 }
 
+export type ExistingLead = { id: number; client_name: string; stage_id: number | null };
+
 /** The already-existing lead a `POST /leads` 409 points at, if the error carries one. */
-export function existingLeadFromError(e: unknown): { id: number; client_name: string } | null {
+export function existingLeadFromError(e: unknown): ExistingLead | null {
   if (!e || typeof e !== "object") return null;
   const { status, detail } = e as { status?: unknown; detail?: unknown };
   if (status !== 409 || !detail || typeof detail !== "object") return null;
-  const existing = (detail as { existing?: { id?: unknown; client_name?: unknown } }).existing;
+  const existing = (detail as { existing?: { id?: unknown; client_name?: unknown; stage_id?: unknown } }).existing;
   if (!existing || typeof existing.id !== "number") return null;
-  return { id: existing.id, client_name: typeof existing.client_name === "string" ? existing.client_name : "" };
+  return { id: existing.id, client_name: typeof existing.client_name === "string" ? existing.client_name : "",
+    stage_id: typeof existing.stage_id === "number" ? existing.stage_id : null };
 }

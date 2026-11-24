@@ -24,7 +24,9 @@ describe("existingLeadFromError", () => {
     const e = Object.assign(new Error("dup"), {
       status: 409, detail: { message: "dup", existing: { id: 3, client_name: "Айбек", stage_id: 1 } },
     });
-    expect(existingLeadFromError(e)).toEqual({ id: 3, client_name: "Айбек" });
+    expect(existingLeadFromError(e)).toEqual({ id: 3, client_name: "Айбек", stage_id: 1 });
+    expect(existingLeadFromError(Object.assign(new Error("d"), { status: 409, detail: { existing: { id: 4 } } })))
+      .toEqual({ id: 4, client_name: "", stage_id: null });
   });
   it("returns null for other errors", () => {
     expect(existingLeadFromError(new Error("x"))).toBeNull();

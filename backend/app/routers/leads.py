@@ -16,7 +16,7 @@ from app.schemas import UserOut
 from app.services import deals as deal_service
 from app.services.sales_metrics import latest_deal_by_lead
 from app.services.leads import (
-    scheduled_meeting_for,
+    scheduled_meeting_for, find_duplicate_lead,
     change_lead_stage, add_activity, get_lead_timeline, StageTransitionError, active_stages,
 )
 
@@ -611,6 +611,21 @@ def get_funnel(
     return FunnelResponse(leads=cards, stages=stages)
 
 
+def _existing_out(lead: Lead) -> dict:
+    return {"id": lead.id, "client_name": lead.client_name, "stage_id": lead.stage_id}
+
+
+@router.get("/duplicates")
+def lead_duplicates(
+    phone: str = "",
+    exclude_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    existing = find_duplicate_lead(db, [phone], exclude_id=exclude_id)
+    return {"existing": _existing_out(existing) if existing else None}
+
+
 @router.get("/{lead_id}", response_model=LeadDetailOut)
 def get_lead(lead_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     lead = (
@@ -708,21 +723,14 @@ def create_lead(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if body.phone and not body.force:
-        existing = db.query(Lead).filter(
-            Lead.phone == body.phone,
-            Lead.status == LeadStatus.active,
-        ).first()
+    if not body.force:
+        existing = find_duplicate_lead(db, [body.phone, body.whatsapp])
         if existing:
             raise HTTPException(
                 status_code=409,
                 detail={
                     "message": "Лид с таким номером уже существует",
-                    "existing": {
-                        "id": existing.id,
-                        "client_name": existing.client_name,
-                        "stage_id": existing.stage_id,
-                    },
+                    "existing": _existing_out(existing),
                 },
             )
 

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { Modal } from "@/components/Modal";
 import { Shell } from "@/components/Shell";
 import { Button, ConfirmModal } from "@/components/ui";
 import { TransitionModal, stageKind, STAGE_ACTION_LABELS } from "@/components/TransitionModal";
@@ -15,6 +16,7 @@ import { LeadComposer, type ComposerTab } from "@/components/leadcard/LeadCompos
 import { useApp } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";
 import { api, leadApi, leadTasksApi, settingsApi, whatsappApi } from "@/lib/api";
+import type { ExistingLead } from "@/lib/apiError";
 import { buildLeadPatch, type LeadEditableField } from "@/lib/leadPatch";
 import { closerOptions } from "@/lib/roles";
 import { fmtDate, fmtDateTime, fmtMoney, fmtMoneyShort } from "@/lib/format";
@@ -118,6 +120,7 @@ export default function LeadDetailPage() {
   const { id } = useParams<{ id: string }>();
   const leadId = Number(id);
   const router = useRouter();
+  const [dupeAsk, setDupeAsk] = useState<{ existing: ExistingLead; resolve: (c: "save" | "open" | "cancel") => void } | null>(null);
   const toast = useToast();
   const { isAdmin, user } = useApp();
 
@@ -205,8 +208,23 @@ export default function LeadDetailPage() {
 
   // Inline edit: one field per PATCH, then reload so derived values (deal status, etc.) refresh.
   // Errors (e.g. 422 «сумма ниже графика оплат») are toasted and rethrown so the field reverts.
+  // A phone/whatsapp that another active lead already has waits for the user's choice in a modal.
+  const askAboutDuplicate = (existing: ExistingLead) =>
+    new Promise<"save" | "open" | "cancel">((resolve) => setDupeAsk({ existing, resolve }));
+  const answerDuplicate = (choice: "save" | "open" | "cancel") => {
+    dupeAsk?.resolve(choice);
+    setDupeAsk(null);
+  };
   const saveField = (field: LeadEditableField) => async (raw: string) => {
     try {
+      if ((field === "phone" || field === "whatsapp") && raw.trim()) {
+        const { existing } = await leadApi.findDuplicate(raw, lead!.id);
+        if (existing) {
+          const choice = await askAboutDuplicate(existing);
+          if (choice === "open") { router.push(`/leads/${existing.id}`); return; }
+          if (choice === "cancel") return;
+        }
+      }
       await leadApi.update(lead!.id, buildLeadPatch(field, raw));
       await reload();
       toast("Сохранено", "success");
@@ -423,6 +441,16 @@ export default function LeadDetailPage() {
           }}
           users={users} rejectReasons={rejectReasons} onConfirm={handleTransitionConfirm} onCancel={() => setTransition(null)} />
       )}
+      <Modal open={dupeAsk !== null} title="Дубль номера" width={420} onClose={() => answerDuplicate("cancel")}
+        footer={<>
+          <Button variant="ghost" onClick={() => answerDuplicate("cancel")}>Отмена</Button>
+          <Button variant="ghost" onClick={() => answerDuplicate("open")}>Открыть его</Button>
+          <Button onClick={() => answerDuplicate("save")}>Всё равно сохранить</Button>
+        </>}>
+        <p style={{ margin: 0, fontSize: 14, color: "var(--text2)", lineHeight: 1.6 }}>
+          Этот номер уже у лида {dupeAsk?.existing.client_name}
+        </p>
+      </Modal>
       <ConfirmModal open={ignoreConfirm} title="Это не лид?" variant="danger" confirmLabel="Не лид"
         message="Номер помечается как «Не лид»: новые сообщения с него не будут создавать лиды. Если этот лид создан автоматически из WhatsApp, он уйдёт в архив."
         onCancel={() => setIgnoreConfirm(false)}
