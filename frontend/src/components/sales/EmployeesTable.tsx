@@ -44,7 +44,7 @@ export function EmployeesTable({ setters, closers }: { setters: SetterMetricsRow
               <th>Сотрудник</th>
               {SETTER_COLS.map((c) => <th key={c.key} title={c.hint} style={{ textAlign: "right", cursor: "help" }}>{c.label}</th>)}
               <th title={`Среднее до первого касания лидов сеттера, созданных в периоде. ${WORKING_HINT}`} style={{ textAlign: "right", cursor: "help" }}>Ср. время до касания</th>
-              <th title="Лиды сеттера, созданные в периоде, до которых так и не дотронулись" style={{ textAlign: "right", cursor: "help" }}>Без касания</th>
+              <th title="Лиды сеттера, созданные в периоде, которые всё ещё на ранних этапах (до встречи) и до которых так и не дотронулись" style={{ textAlign: "right", cursor: "help" }}>Без касания</th>
             </tr>
           </thead>
           <tbody>

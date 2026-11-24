@@ -75,12 +75,20 @@ def test_stage_change_is_not_a_touch(db, lead, staff):
     act(db, lead, staff, NOON, typ="stage_change", desc="Новый → Созвон")
     act(db, lead, staff, NOON, typ="whatsapp", desc="msg")
     row = setter_row(db, staff)
-    assert row is None or (row["touches"] == 0 and row["untouched"] == 1)
+    # The fixture lead sits on «Договор» — past the early stages, so it is not «untouched».
+    assert row is None
 
 
 def test_manual_activity_is_a_touch(db, lead, staff):
-    act(db, lead, staff, NOON, typ="note", desc="Позвонил в мессенджер")
+    act(db, lead, staff, NOON, typ="Звонок исходящий", desc="Позвонил в мессенджер")
     assert setter_row(db, staff)["touches"] == 1
+
+
+def test_created_and_note_are_not_touches(db, lead, staff):
+    act(db, lead, staff, NOON, typ="created", desc="Лид создан")
+    act(db, lead, staff, NOON, typ="note", desc="Внутренняя заметка")
+    row = setter_row(db, staff)
+    assert row is None or row["touches"] == 0
 
 
 def test_calls_connected_and_no_answer(db, lead, staff):

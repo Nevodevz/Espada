@@ -17,7 +17,7 @@ export function UnclaimedLeadsBlock({ items, onTake }: {
           <Link href={`/leads/${l.id}`} style={{ flex: 1, minWidth: 0, fontSize: 13 }}>
             <div style={{ fontWeight: 600 }}>{l.client_name}</div>
             <div style={{ color: "var(--text3)", fontSize: 12 }}>
-              {[l.phone, l.source_name, formatWaitingMinutes(l.waiting_minutes)].filter(Boolean).join(" · ")}
+              {[l.phone, l.source_name, l.waiting_minutes != null ? formatWaitingMinutes(l.waiting_minutes) : null].filter(Boolean).join(" · ")}
             </div>
           </Link>
           <Button variant="primary" onClick={() => onTake(l.id)}>Взять</Button>

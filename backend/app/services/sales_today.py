@@ -5,7 +5,7 @@ from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from app.models import Lead, LeadStage, LeadStatus, User, WhatsAppChat, WhatsAppMessage
-from app.services.first_touch import working_minutes
+from app.services.first_touch import early_stage_ids, first_touch_at, is_early, working_minutes
 from app.services.sales_access import is_sales_head
 
 
@@ -21,6 +21,9 @@ def unclaimed_leads(db: Session, limit: int = 50, now: datetime | None = None) -
         .limit(limit)
         .all()
     )
+    early = early_stage_ids(db)
+    early_ids = [l.id for l in rows if is_early(l.stage_id, early)]
+    waiting = set(early_ids) - set(first_touch_at(db, early_ids))
     return [
         {
             "id": l.id,
@@ -28,7 +31,8 @@ def unclaimed_leads(db: Session, limit: int = 50, now: datetime | None = None) -
             "phone": l.phone,
             "source_name": l.source.name if l.source else None,
             "created_at": l.created_at,
-            "waiting_minutes": working_minutes(l.created_at, now),
+            # Timer only while the lead sits on an early stage untouched.
+            "waiting_minutes": working_minutes(l.created_at, now) if l.id in waiting else None,
         }
         for l in rows
     ]

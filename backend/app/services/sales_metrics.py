@@ -14,7 +14,8 @@ from sqlalchemy.orm import Session
 
 from app.models import (Deal, Lead, LeadActivity, LeadStage, LeadStageHistory, LeadStatus, Meeting,
                         MeetingStatus, RejectReason, User, WhatsAppChat, WhatsAppMessage)
-from app.services.first_touch import NON_MANUAL_ACTIVITIES, first_touch_at, touch_rows, working_minutes  # noqa: F401
+from app.services.first_touch import (NON_MANUAL_ACTIVITIES, early_stage_ids, first_touch_at,  # noqa: F401
+                                      is_early, touch_rows, working_minutes)
 from app.services.leads import BISHKEK_TZ
 
 HELD_STATUSES = (MeetingStatus.closed, MeetingStatus.minus, MeetingStatus.push)
@@ -134,17 +135,19 @@ def _count_by(db: Session, column, *filters) -> dict[int, int]:
 
 def _first_touch_stats(db: Session, start: datetime, end: datetime) -> dict[int, tuple[int | None, int]]:
     """setter_id -> (avg working minutes to first touch over touched leads, untouched count),
-    for leads created in the period."""
-    leads = (db.query(Lead.id, Lead.setter_id, Lead.created_at)
+    for leads created in the period. «Untouched» counts only leads still on an early stage
+    (see `early_stage_ids`): a lead moved on to a meeting is not waiting for a touch."""
+    leads = (db.query(Lead.id, Lead.setter_id, Lead.created_at, Lead.stage_id)
              .filter(Lead.setter_id.isnot(None), Lead.status == LeadStatus.active,
                      Lead.created_at >= start, Lead.created_at < end).all())
-    touched = first_touch_at(db, [lid for lid, _, _ in leads])
+    touched = first_touch_at(db, [lid for lid, _, _, _ in leads])
+    early = early_stage_ids(db)
     waits: dict[int, list[int]] = {}
     untouched: dict[int, int] = {}
-    for lid, setter, created in leads:
+    for lid, setter, created, stage_id in leads:
         if lid in touched:
             waits.setdefault(setter, []).append(working_minutes(created, touched[lid]))
-        else:
+        elif is_early(stage_id, early):
             untouched[setter] = untouched.get(setter, 0) + 1
     return {u: (round(sum(waits[u]) / len(waits[u])) if u in waits else None, untouched.get(u, 0))
             for u in set(waits) | set(untouched)}

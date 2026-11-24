@@ -35,7 +35,7 @@ def test_working_minutes_end_not_after_start():
 def test_first_touch_at_takes_earliest_of_sources(db, lead, staff):
     db.add(LeadActivity(lead_id=lead.id, activity_type="call_result", description="x",
                         responsible_id=staff.id, created_at=bk(11, 9, 12)))
-    db.add(LeadActivity(lead_id=lead.id, activity_type="note", description="x",
+    db.add(LeadActivity(lead_id=lead.id, activity_type="Комментарий", description="x",
                         responsible_id=staff.id, created_at=bk(11, 9, 13)))
     db.add(LeadActivity(lead_id=lead.id, activity_type="stage_change", description="x",
                         responsible_id=staff.id, created_at=bk(11, 9, 10)))
@@ -78,7 +78,7 @@ def test_board_card_waiting_minutes_until_first_touch(client, db, admin, staff, 
     monkeypatch.setattr(lead_board_router, "_now", lambda: bk(11, 9, 10, 22))
     l = _lead(db, stages["Новый лид"], bk(11, 9, 10, 0))
     assert _card(client, admin, l.id)["waiting_minutes"] == 22
-    db.add(LeadActivity(lead_id=l.id, activity_type="note", description="x",
+    db.add(LeadActivity(lead_id=l.id, activity_type="Звонок исходящий", description="x",
                         responsible_id=staff.id, created_at=bk(11, 9, 10, 5)))
     db.commit()
     assert _card(client, admin, l.id)["waiting_minutes"] is None
@@ -122,3 +122,70 @@ def test_untouched_only_setter_gets_row(db, stages, staff):
                if r["user_id"] == staff.id)
     assert row["untouched"] == 1
     assert row["avg_first_touch_minutes"] is None
+
+
+# ── Final review fixes: touch definition and early stages ──────────
+def test_created_and_note_are_not_touches(client, db, admin, staff, stages, monkeypatch):
+    from datetime import date
+    monkeypatch.setattr(lead_board_router, "_now", lambda: bk(11, 9, 10, 30))
+    l = _lead(db, stages["Новый лид"], bk(11, 9, 10, 0), setter_id=staff.id)
+    for typ in ("created", "note"):
+        db.add(LeadActivity(lead_id=l.id, activity_type=typ, description="x",
+                            responsible_id=staff.id, created_at=bk(11, 9, 10, 1)))
+    db.commit()
+    assert first_touch_at(db, [l.id]) == {}
+    assert _card(client, admin, l.id)["waiting_minutes"] == 30
+    row = next(r for r in employee_rows(db, date(2026, 11, 1), date(2026, 11, 30))["setters"]
+               if r["user_id"] == staff.id)
+    assert row["touches"] == 0
+    assert row["untouched"] == 1
+
+
+def test_manual_touch_types_still_count(db, stages, staff):
+    l = _lead(db, stages["Новый лид"], bk(11, 9, 10, 0))
+    for typ, minute in (("task_done", 5), ("Звонок исходящий", 3)):
+        db.add(LeadActivity(lead_id=l.id, activity_type=typ, description="x",
+                            responsible_id=staff.id, created_at=bk(11, 9, 10, minute)))
+    db.commit()
+    at = first_touch_at(db, [l.id])[l.id]
+    at = at if at.tzinfo else at.replace(tzinfo=timezone.utc)
+    assert at == bk(11, 9, 10, 3)
+
+
+def test_no_timer_on_advanced_stage(client, db, admin, staff, stages, monkeypatch):
+    from datetime import date
+    monkeypatch.setattr(lead_board_router, "_now", lambda: bk(11, 9, 12, 0))
+    meet = _lead(db, stages["Встреча"], bk(11, 9, 10, 0), setter_id=staff.id)
+    early = _lead(db, stages["Созвон"], bk(11, 9, 10, 0), setter_id=staff.id)
+    assert _card(client, admin, meet.id)["waiting_minutes"] is None
+    assert _card(client, admin, early.id)["waiting_minutes"] == 120
+    row = next(r for r in employee_rows(db, date(2026, 11, 1), date(2026, 11, 30))["setters"]
+               if r["user_id"] == staff.id)
+    assert row["untouched"] == 1
+
+
+def test_generic_stage_after_meeting_is_not_early(client, db, admin, stages, monkeypatch):
+    from app.models import LeadStage
+    from app.services.first_touch import early_stage_ids
+    late = LeadStage(name="Повторный контакт", position=3, kind="generic")
+    db.add(late)
+    db.commit()
+    ids = early_stage_ids(db)
+    assert stages["Новый лид"].id in ids and stages["Созвон"].id in ids
+    assert late.id not in ids and stages["Встреча"].id not in ids
+    monkeypatch.setattr(lead_board_router, "_now", lambda: bk(11, 9, 12, 0))
+    l = _lead(db, late, bk(11, 9, 10, 0))
+    assert _card(client, admin, l.id)["waiting_minutes"] is None
+
+
+def test_unclaimed_timer_only_for_early_untouched(db, stages, staff):
+    meet = _lead(db, stages["Встреча"], bk(11, 9, 10, 0))
+    touched = _lead(db, stages["Новый лид"], bk(11, 9, 10, 0))
+    fresh = _lead(db, stages["Новый лид"], bk(11, 9, 10, 0))
+    db.add(LeadActivity(lead_id=touched.id, activity_type="call_result", description="📵 Недозвон",
+                        responsible_id=staff.id, created_at=bk(11, 9, 10, 1)))
+    db.commit()
+    rows = {r["id"]: r for r in unclaimed_leads(db, now=bk(11, 9, 10, 30))}
+    assert rows[meet.id]["waiting_minutes"] is None
+    assert rows[touched.id]["waiting_minutes"] is None
+    assert rows[fresh.id]["waiting_minutes"] == 30

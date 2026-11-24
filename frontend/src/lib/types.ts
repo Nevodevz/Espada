@@ -1134,8 +1134,8 @@ export interface UnclaimedLead {
   phone: string | null;
   source_name: string | null;
   created_at: string;
-  /** Working minutes since creation. */
-  waiting_minutes: number;
+  /** Working minutes since creation; null once touched or past the early stages. */
+  waiting_minutes: number | null;
 }
 
 export interface AwaitingReplyItem {
