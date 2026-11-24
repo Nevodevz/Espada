@@ -14,11 +14,11 @@ from sqlalchemy.orm import Session
 
 from app.models import (Deal, Lead, LeadActivity, LeadStage, LeadStatus, Meeting,
                         MeetingStatus, User, WhatsAppChat, WhatsAppMessage)
+from app.services.first_touch import NON_MANUAL_ACTIVITIES, touch_rows  # noqa: F401
 from app.services.leads import BISHKEK_TZ
 
 HELD_STATUSES = (MeetingStatus.closed, MeetingStatus.minus, MeetingStatus.push)
 CLOSER_STATUSES = ("scheduled", "closed", "minus", "push", "not_held")
-NON_MANUAL_ACTIVITIES = ("stage_change", "call_result", "whatsapp")
 # lead_tasks._result_text writes call results as «✅ Дозвонился» / «📵 Недозвон»;
 # the activity row has no structured result field, so the prefix is the signal.
 CONNECTED_PREFIX = "✅"
@@ -119,29 +119,7 @@ def totals(db: Session, date_from: date, date_to: date, source_id=None, service_
 
 def _touches(db: Session, start: datetime, end: datetime) -> dict[int, int]:
     """user_id -> number of unique (lead, Bishkek day) touches."""
-    seen: set[tuple[int, int, date]] = set()
-
-    acts = (
-        db.query(LeadActivity.responsible_id, LeadActivity.lead_id, LeadActivity.created_at)
-        .filter(LeadActivity.responsible_id.isnot(None),
-                LeadActivity.created_at >= start, LeadActivity.created_at < end)
-        .filter(or_(LeadActivity.activity_type == "call_result",
-                    LeadActivity.activity_type.notin_(NON_MANUAL_ACTIVITIES)))
-        .all()
-    )
-    for uid, lead_id, at in acts:
-        seen.add((uid, lead_id, bishkek_day(at)))
-
-    msgs = (
-        db.query(WhatsAppMessage.sender_user_id, WhatsAppChat.lead_id, WhatsAppMessage.sent_at)
-        .join(WhatsAppChat, WhatsAppChat.id == WhatsAppMessage.chat_id)
-        .filter(WhatsAppMessage.direction == "out", WhatsAppMessage.sender_user_id.isnot(None),
-                WhatsAppChat.lead_id.isnot(None),
-                WhatsAppMessage.sent_at >= start, WhatsAppMessage.sent_at < end)
-        .all()
-    )
-    for uid, lead_id, at in msgs:
-        seen.add((uid, lead_id, bishkek_day(at)))
+    seen = {(uid, lead_id, bishkek_day(at)) for uid, lead_id, at in touch_rows(db, start=start, end=end)}
 
     out: dict[int, int] = {}
     for uid, _, _ in seen:
