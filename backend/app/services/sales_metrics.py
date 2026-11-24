@@ -12,8 +12,8 @@ from datetime import date, datetime, time, timedelta, timezone
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app.models import (Deal, Lead, LeadActivity, LeadStage, LeadStatus, Meeting,
-                        MeetingStatus, User, WhatsAppChat, WhatsAppMessage)
+from app.models import (Deal, Lead, LeadActivity, LeadStage, LeadStageHistory, LeadStatus, Meeting,
+                        MeetingStatus, RejectReason, User, WhatsAppChat, WhatsAppMessage)
 from app.services.first_touch import NON_MANUAL_ACTIVITIES, touch_rows  # noqa: F401
 from app.services.leads import BISHKEK_TZ
 
@@ -183,3 +183,49 @@ def employee_rows(db: Session, date_from: date, date_to: date) -> dict:
         for u in sorted(closer_ids, key=lambda i: names.get(i, ""))
     ]
     return {"setters": setters, "closers": closers}
+
+
+def lost_reasons(db: Session, date_from: date, date_to: date, user_id: int | None = None) -> list[dict]:
+    """Leads whose latest stage move (inside the period) went to a lost stage, grouped by reject reason."""
+    start, end = period_bounds(date_from, date_to)
+    latest = (
+        db.query(LeadStageHistory.lead_id, func.max(LeadStageHistory.id).label("hid"))
+        .group_by(LeadStageHistory.lead_id).subquery()
+    )
+    q = (
+        db.query(Lead)
+        .join(latest, latest.c.lead_id == Lead.id)
+        .join(LeadStageHistory, LeadStageHistory.id == latest.c.hid)
+        .join(LeadStage, LeadStage.id == LeadStageHistory.to_stage_id)
+        .filter(LeadStage.is_lost == True,  # noqa: E712
+                LeadStageHistory.created_at >= start, LeadStageHistory.created_at < end)
+    )
+    if user_id:
+        q = q.filter(Lead.setter_id == user_id)
+    leads = q.all()
+    if not leads:
+        return []
+
+    groups: dict[int | None, dict[int | None, int]] = {}
+    for l in leads:
+        by_user = groups.setdefault(l.reject_reason_id, {})
+        by_user[l.setter_id] = by_user.get(l.setter_id, 0) + 1
+
+    reason_names = {r.id: r.name for r in db.query(RejectReason).filter(RejectReason.id.in_([k for k in groups if k]))}
+    user_ids = {u for g in groups.values() for u in g if u}
+    names = {u.id: u.name for u in db.query(User).filter(User.id.in_(user_ids)).all()} if user_ids else {}
+
+    total = len(leads)
+    rows = []
+    for rid, by_user in groups.items():
+        count = sum(by_user.values())
+        rows.append({
+            "reason_id": rid,
+            "name": reason_names.get(rid, "Без причины") if rid else "Без причины",
+            "count": count,
+            "pct": round(count / total * 100, 1),
+            "by_user": [{"user_id": u, "name": names.get(u, "—"), "count": n}
+                        for u, n in sorted(by_user.items(), key=lambda kv: -kv[1])],
+        })
+    rows.sort(key=lambda r: (-r["count"], r["name"]))
+    return rows

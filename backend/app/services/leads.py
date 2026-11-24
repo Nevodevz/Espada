@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     Lead, LeadStageHistory, LeadActivity, LeadStage, Meeting, Deal, DealPayment,
-    LeadStatus, MeetingStatus, PaymentStatus,
+    LeadStatus, MeetingStatus, PaymentStatus, RejectReason,
 )
 from app.services import deals as deal_service
 from app.services.whatsapp.phone import normalize_phone
@@ -395,8 +395,12 @@ def _handle_lost_stage(db: Session, lead: Lead, changed_by: int | None, extra: d
     reject_comment = extra.get("reject_comment", "")
     closer_id = extra.get("closer_id") or lead.closer_id
 
-    if reject_reason_id:
-        lead.reject_reason_id = reject_reason_id
+    # Validate before touching the lead: the router commits on StageTransitionError.
+    reason = db.get(RejectReason, reject_reason_id) if reject_reason_id else None
+    if reason is None or not reason.is_active:
+        raise StageTransitionError("Укажите причину отказа")
+
+    lead.reject_reason_id = reason.id
     if reject_comment:
         lead.reject_comment = reject_comment
     if closer_id:

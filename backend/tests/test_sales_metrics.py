@@ -137,7 +137,7 @@ def test_staff_sees_only_own_row(db, client, sales, staff, other_staff, lead):
                    headers=auth_headers(staff))
     assert r.status_code == 200
     body = r.json()
-    assert set(body) == {"totals", "funnel", "daily", "sources", "employees"}
+    assert set(body) == {"totals", "funnel", "daily", "sources", "employees", "lost_reasons"}
     assert [s["user_id"] for s in body["employees"]["setters"]] == [staff.id]
 
 

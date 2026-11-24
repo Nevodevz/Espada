@@ -10,7 +10,7 @@ from app.core.deps import get_current_user
 from app.models import User
 from app.services import analytics
 from app.services.sales_access import is_sales_head, is_sales_staff
-from app.services.sales_metrics import employee_rows, totals
+from app.services.sales_metrics import employee_rows, lost_reasons, totals
 from app.services.sales_today import awaiting_reply, unclaimed_leads
 
 router = APIRouter(prefix="/api/sales-hub", tags=["sales-hub"])
@@ -49,4 +49,5 @@ def metrics(
         "daily": charts["daily"],
         "sources": charts["sources_pie"],
         "employees": employees,
+        "lost_reasons": lost_reasons(db, date_from, date_to, user_id if is_sales_head(user) else user.id),
     }

@@ -1185,12 +1185,21 @@ export interface CloserMetricsRow {
   sales_amount: number;
 }
 
+export interface LostReasonRow {
+  reason_id: number | null;
+  name: string;
+  count: number;
+  pct: number;
+  by_user: { user_id: number | null; name: string; count: number }[];
+}
+
 export interface SalesMetrics {
   totals: SalesMetricsTotals;
   funnel: FunnelPoint[];
   daily: DailyPoint[];
   sources: SalesMetricsSource[];
   employees: { setters: SetterMetricsRow[]; closers: CloserMetricsRow[] };
+  lost_reasons: LostReasonRow[];
 }
 
 export interface SalesMetricsQuery {

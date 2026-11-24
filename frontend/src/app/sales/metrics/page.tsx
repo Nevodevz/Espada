@@ -6,6 +6,7 @@ import { Button, Card, DateRangePicker, Select } from "@/components/ui";
 import { ChartCard, DailyRevenueChart, DailyTrendChart, FunnelViz, SourcesPie } from "@/components/charts/SalesCharts";
 import { DiaryArchive } from "@/components/sales/DiaryArchive";
 import { EmployeesTable } from "@/components/sales/EmployeesTable";
+import { LostReasonsCard } from "@/components/sales/LostReasonsCard";
 import { MetricsTotals } from "@/components/sales/MetricsTotals";
 import { useApp } from "@/context/AppContext";
 import { api, salesHubApi, settingsApi } from "@/lib/api";
@@ -150,6 +151,8 @@ export default function SalesMetricsPage() {
 
           <div className="section-label" style={{ marginTop: 8 }}>По сотрудникам</div>
           <EmployeesTable setters={data.employees.setters} closers={data.employees.closers} />
+
+          <LostReasonsCard rows={data.lost_reasons ?? []} />
 
           <DiaryArchive dateFrom={range.from} dateTo={range.to}
             userId={head ? (userId ? Number(userId) : undefined) : user?.id} />

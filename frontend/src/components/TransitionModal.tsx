@@ -121,8 +121,11 @@ export function TransitionModal({
     setForm((prev) => ({ ...prev, [key]: val }));
   }
 
+  const needsReason = kind === "lost" && !Number(form.reject_reason_id);
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (needsReason) return;
     const extra: Record<string, unknown> = { ...form };
     if (kind === "won") extra.paid_amount = Number(form.paid_amount) || 0;
     if (kind === "contract" || kind === "waiting_payment") extra.amount = Number(form.amount) || 0;
@@ -403,7 +406,7 @@ export function TransitionModal({
 
         {kind === "lost" && (
           <>
-            <FormField label="Причина отказа">
+            <FormField label="Причина отказа *">
               <Select
                 value={String(form.reject_reason_id || "")}
                 onChange={(e) => set("reject_reason_id", Number(e.target.value))}
@@ -458,7 +461,7 @@ export function TransitionModal({
           <Button type="button" variant="ghost" onClick={onCancel} disabled={busy}>
             Отмена
           </Button>
-          <Button type="submit" variant="primary" loading={busy} disabled={busy}>
+          <Button type="submit" variant="primary" loading={busy} disabled={busy || needsReason}>
             {confirmLabel}
           </Button>
         </div>
