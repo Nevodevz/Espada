@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { archiveTarget, archiveWarning, blurActiveField, isServiceStage, reorderPosition, validStageFilter } from "./stageSettings";
+import { archiveTarget, archiveWarning, blurActiveField, creatableStages, isServiceStage, reorderPosition, validStageFilter } from "./stageSettings";
 import type { LeadStage } from "./types";
 
 function st(id: number, over: Partial<LeadStage> = {}): LeadStage {
@@ -79,5 +79,12 @@ describe("validStageFilter", () => {
   it("resets archived or missing", () => {
     expect(validStageFilter("2", list)).toBe("");
     expect(validStageFilter("9", list)).toBe("");
+  });
+});
+
+describe("creatableStages", () => {
+  it("drops won and lost stages", () => {
+    const list = [st(1), st(2, { kind: "meeting" }), st(3, { kind: "won", is_won: true }), st(4, { kind: "lost", is_lost: true })];
+    expect(creatableStages(list).map((s) => s.id)).toEqual([1, 2]);
   });
 });

@@ -10,6 +10,11 @@ export function isPinnedStage(s: Pick<LeadStage, "is_won" | "is_lost">): boolean
   return s.is_won || s.is_lost;
 }
 
+/** Stages a new lead may start on: won/lost need a transition (loss reason, paid deal). */
+export function creatableStages<T extends Pick<LeadStage, "kind" | "is_won" | "is_lost">>(stages: T[]): T[] {
+  return stages.filter((s) => s.kind !== "won" && s.kind !== "lost" && !s.is_won && !s.is_lost);
+}
+
 /**
  * Where leads of a removed stage go (mirrors the backend): the first active non-won/lost
  * generic stage, falling back to any active non-won/lost stage.

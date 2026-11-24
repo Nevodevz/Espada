@@ -745,6 +745,9 @@ def create_lead(
         stage = db.query(LeadStage).filter(LeadStage.id == stage_id).first()
         if stage is None or stage.is_archived:
             raise HTTPException(422, "Выбран недоступный этап")
+        # Closing stages need their side effects (loss reason, paid deal) — only via a transition.
+        if stage.kind in ("won", "lost") or stage.is_won or stage.is_lost:
+            raise HTTPException(422, "Нельзя создать лид сразу в этом этапе")
     else:
         first_stage = next(iter(active_stages(db)), None)
         stage_id = first_stage.id if first_stage else None
@@ -804,10 +807,14 @@ def update_lead(
     lead = _load_lead(db, lead_id)
     data = body.model_dump(exclude_unset=True)
 
-    if data.get("stage_id"):
+    if data.get("stage_id") and data["stage_id"] != lead.stage_id:
         stage = db.query(LeadStage).filter(LeadStage.id == data["stage_id"]).first()
         if stage is None or stage.is_archived:
             raise HTTPException(422, "Выбран недоступный этап")
+        # Non-generic stages carry side effects (meeting, deal, loss reason) that only
+        # PATCH /{id}/stage applies.
+        if (stage.kind or "generic") != "generic":
+            raise HTTPException(422, "Этап меняется через перевод этапа")
 
     deal_amount = data.pop("deal_amount", None)
     for field, val in data.items():

@@ -396,7 +396,11 @@ def _handle_lost_stage(db: Session, lead: Lead, changed_by: int | None, extra: d
     closer_id = extra.get("closer_id") or lead.closer_id
 
     # Validate before touching the lead: the router commits on StageTransitionError.
-    reason = db.get(RejectReason, reject_reason_id) if reject_reason_id else None
+    try:
+        reason_id = int(reject_reason_id) if reject_reason_id else None
+    except (TypeError, ValueError):
+        raise StageTransitionError("Укажите причину отказа")
+    reason = db.get(RejectReason, reason_id) if reason_id else None
     if reason is None or not reason.is_active:
         raise StageTransitionError("Укажите причину отказа")
 

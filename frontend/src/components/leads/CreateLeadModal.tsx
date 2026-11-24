@@ -1,6 +1,7 @@
 "use client";
 
 import { closerOptions } from "@/lib/roles";
+import { creatableStages } from "@/lib/stageSettings";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal } from "@/components/Modal";
@@ -157,7 +158,7 @@ export function CreateLeadModal({
         <FormField label="Этап">
           <Select value={form.stage_id} onChange={f("stage_id")}>
             <option value="">— по умолчанию —</option>
-            {stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            {creatableStages(stages).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </Select>
         </FormField>
 

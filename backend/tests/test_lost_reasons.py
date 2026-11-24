@@ -108,3 +108,48 @@ def test_lost_reasons_staff_only_own(client, db, stages, staff, other_staff, rea
     assert r.status_code == 200, r.text
     rows = r.json()["lost_reasons"]
     assert len(rows) == 1 and rows[0]["count"] == 1 and rows[0]["by_user"][0]["user_id"] == staff.id
+
+
+# ── Final review: no way into «Минус» around the stage endpoint ───
+@pytest.mark.parametrize("stage_name", ["Минус", "Оплачено"])
+def test_create_lead_on_closed_stage_rejected(client, admin, stages, stage_name):
+    r = client.post("/api/leads", headers=auth_headers(admin),
+                    json={"client_name": "Новый", "phone": "+996 700 909090",
+                          "stage_id": stages[stage_name].id})
+    assert r.status_code == 422
+    assert "Нельзя создать лид сразу в этом этапе" in r.json()["detail"]
+
+
+def test_create_lead_on_generic_stage_ok(client, admin, stages):
+    r = client.post("/api/leads", headers=auth_headers(admin),
+                    json={"client_name": "Новый", "phone": "+996 700 909091",
+                          "stage_id": stages["Созвон"].id})
+    assert r.status_code in (200, 201), r.text
+    assert r.json()["stage_id"] == stages["Созвон"].id
+
+
+@pytest.mark.parametrize("stage_name", ["Минус", "Оплачено", "Встреча"])
+def test_patch_lead_cannot_jump_to_special_stage(client, db, admin, lead, stages, stage_name):
+    before = lead.stage_id
+    r = client.patch(f"/api/leads/{lead.id}", headers=auth_headers(admin),
+                     json={"stage_id": stages[stage_name].id})
+    assert r.status_code == 422
+    assert "Этап меняется через перевод этапа" in r.json()["detail"]
+    db.refresh(lead)
+    assert lead.stage_id == before
+
+
+def test_patch_lead_same_or_generic_stage_ok(client, db, admin, lead, stages):
+    r = client.patch(f"/api/leads/{lead.id}", headers=auth_headers(admin),
+                     json={"stage_id": lead.stage_id, "comment": "x"})
+    assert r.status_code == 200, r.text
+    r = client.patch(f"/api/leads/{lead.id}", headers=auth_headers(admin),
+                     json={"stage_id": stages["Созвон"].id})
+    assert r.status_code == 200, r.text
+
+
+@pytest.mark.parametrize("garbage", ["abc", [1], {"x": 1}])
+def test_lost_with_garbage_reason_is_422(client, db, admin, lead, stages, garbage):
+    r = to_lost(client, admin, lead, stages, reject_reason_id=garbage)
+    assert r.status_code == 422
+    assert "причину отказа" in r.json()["detail"]
