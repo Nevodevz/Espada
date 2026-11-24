@@ -113,3 +113,12 @@ def test_avg_first_touch_per_setter(db, stages, staff):
                if r["user_id"] == staff.id)
     assert row["avg_first_touch_minutes"] == 20
     assert row["untouched"] == 1
+
+
+def test_untouched_only_setter_gets_row(db, stages, staff):
+    from datetime import date
+    _lead(db, stages["Новый лид"], bk(11, 9, 10, 0), setter_id=staff.id)
+    row = next(r for r in employee_rows(db, date(2026, 11, 1), date(2026, 11, 30))["setters"]
+               if r["user_id"] == staff.id)
+    assert row["untouched"] == 1
+    assert row["avg_first_touch_minutes"] is None

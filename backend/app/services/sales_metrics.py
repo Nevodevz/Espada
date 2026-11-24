@@ -185,6 +185,7 @@ def employee_rows(db: Session, date_from: date, date_to: date) -> dict:
 
     first = _first_touch_stats(db, start, end)
     setter_ids = {u for src in (touches, connected, no_answer, booked, held) for u, n in src.items() if n > 0}
+    setter_ids |= {u for u, (avg, untouched) in first.items() if untouched > 0 or avg is not None}
     closer_ids = {u for u, d in by_status.items() if any(d.values())} | {u for u, (n, _) in sales.items() if n > 0}
     everyone = setter_ids | closer_ids
     names = {u.id: u.name for u in db.query(User).filter(User.id.in_(everyone)).all()} if everyone else {}
