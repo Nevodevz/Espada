@@ -71,6 +71,12 @@ function CardContent({ card }: { card: LeadBoardCard }) {
         </span>
       )}
     </div>
+    {(card.phone || card.whatsapp) && (
+      <a href={`tel:${(card.phone || card.whatsapp).replace(/[^\d+]/g, "")}`} className="lead-board-meta"
+        style={{ display: "block", color: "var(--text2)", textDecoration: "none" }} title="Позвонить">
+        {card.phone || card.whatsapp}
+      </a>
+    )}
     {card.waiting_minutes != null && (
       <div className="lead-board-meta" style={{ color: WAITING_COLOR[waitingLevel(card.waiting_minutes)], fontWeight: 600 }}
         title="Ждёт первого касания, в рабочих минутах (10:00–19:00, пн–пт)">
