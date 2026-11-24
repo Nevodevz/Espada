@@ -12,6 +12,7 @@ import { Button } from "@/components/ui";
 import { StageActionMenu } from "./StageActionMenu";
 import { cardsForStage, cardsWithoutColumn, splitStages } from "./lead-board-layout";
 import { fmtDateTime, fmtMoneyShort } from "@/lib/format";
+import { WAITING_COLOR, formatWaitingMinutes, waitingLevel } from "@/lib/waiting";
 import { TASK_KIND_LABELS } from "@/lib/leadTasks";
 import type { LeadBoardCard, LeadBoardData, LeadStage } from "@/lib/types";
 
@@ -73,6 +74,12 @@ function CardContent({ card }: { card: LeadBoardCard }) {
         </span>
       )}
     </div>
+    {card.waiting_minutes != null && (
+      <div className="lead-board-meta" style={{ color: WAITING_COLOR[waitingLevel(card.waiting_minutes)], fontWeight: 600 }}
+        title="Ждёт первого касания, в рабочих минутах (10:00–19:00, пн–пт)">
+        ждёт {formatWaitingMinutes(card.waiting_minutes)}
+      </div>
+    )}
     {card.company_name && <div className="lead-board-company">{card.company_name}</div>}
     {card.service && <div className="lead-board-meta">{card.service.name}</div>}
     {card.deal_amount > 0 && <div className="lead-board-money">{fmtMoneyShort(card.deal_amount)}</div>}

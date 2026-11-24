@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatWaiting } from "./waiting";
+import { formatWaiting, formatWaitingMinutes, waitingLevel } from "./waiting";
 
 const now = new Date("2026-11-23T12:00:00Z");
 const ago = (min: number) => new Date(now.getTime() - min * 60_000).toISOString();
@@ -10,4 +10,19 @@ describe("formatWaiting", () => {
   it("whole hours", () => expect(formatWaiting(ago(120), now)).toBe("2 ч"));
   it("days", () => expect(formatWaiting(ago(49 * 60), now)).toBe("2 дн"));
   it("future", () => expect(formatWaiting(ago(-5), now)).toBe("0 мин"));
+});
+
+describe("waitingLevel", () => {
+  it("gray under 15", () => expect(waitingLevel(14)).toBe("gray"));
+  it("yellow from 15", () => expect(waitingLevel(15)).toBe("yellow"));
+  it("yellow at 60", () => expect(waitingLevel(60)).toBe("yellow"));
+  it("red over 60", () => expect(waitingLevel(61)).toBe("red"));
+});
+
+describe("formatWaitingMinutes", () => {
+  it("minutes", () => expect(formatWaitingMinutes(4)).toBe("4 мин"));
+  it("hours and minutes", () => expect(formatWaitingMinutes(70)).toBe("1 ч 10 мин"));
+  it("whole hours", () => expect(formatWaitingMinutes(120)).toBe("2 ч"));
+  it("working day", () => expect(formatWaitingMinutes(540)).toBe("1 дн"));
+  it("days", () => expect(formatWaitingMinutes(1100)).toBe("2 дн"));
 });

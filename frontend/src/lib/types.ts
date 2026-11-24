@@ -707,6 +707,8 @@ export interface LeadBoardCard extends Lead {
   scheduled_meeting: ScheduledMeeting | null;
   /** Unread WhatsApp messages from this client. */
   whatsapp_unread: number;
+  /** Working minutes the lead has waited for a first touch; null once touched or closed. */
+  waiting_minutes: number | null;
 }
 
 /** Board columns are funnel stages; won/lost stages are drop zones. */
@@ -1132,6 +1134,8 @@ export interface UnclaimedLead {
   phone: string | null;
   source_name: string | null;
   created_at: string;
+  /** Working minutes since creation. */
+  waiting_minutes: number;
 }
 
 export interface AwaitingReplyItem {
@@ -1173,6 +1177,9 @@ export interface SetterMetricsRow {
   calls_no_answer: number;
   booked: number;
   held: number;
+  /** Average working minutes to first touch; null when no lead was touched. */
+  avg_first_touch_minutes: number | null;
+  untouched: number;
 }
 
 export type CloserOutcome = "scheduled" | "closed" | "minus" | "push" | "not_held";

@@ -48,7 +48,7 @@ export default function TodayPage() {
         <div><Suspense fallback={<div style={{ padding: 30 }}>Загрузка…</div>}><MyTasksBlock /></Suspense></div>
         {data && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <UnclaimedLeadsBlock items={data.unclaimed} now={now} onTake={take} />
+            <UnclaimedLeadsBlock items={data.unclaimed} onTake={take} />
             <AwaitingReplyBlock items={data.awaiting_reply} now={now} />
           </div>
         )}

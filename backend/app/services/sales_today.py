@@ -1,13 +1,17 @@
 """Data for the sales «Сегодня» screen."""
+from datetime import datetime, timezone
+
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from app.models import Lead, LeadStage, LeadStatus, User, WhatsAppChat, WhatsAppMessage
+from app.services.first_touch import working_minutes
 from app.services.sales_access import is_sales_head
 
 
-def unclaimed_leads(db: Session, limit: int = 50) -> list[dict]:
+def unclaimed_leads(db: Session, limit: int = 50, now: datetime | None = None) -> list[dict]:
     """Open leads nobody has taken yet (no setter), oldest first."""
+    now = now or datetime.now(timezone.utc)
     closed = db.query(LeadStage.id).filter(LeadStage.is_won | LeadStage.is_lost)
     rows = (
         db.query(Lead)
@@ -24,6 +28,7 @@ def unclaimed_leads(db: Session, limit: int = 50) -> list[dict]:
             "phone": l.phone,
             "source_name": l.source.name if l.source else None,
             "created_at": l.created_at,
+            "waiting_minutes": working_minutes(l.created_at, now),
         }
         for l in rows
     ]

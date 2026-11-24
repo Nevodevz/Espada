@@ -3,7 +3,7 @@
 Moving a card is a stage change and goes through `PATCH /api/leads/{id}/stage`,
 so every stage side effect (meeting, deal, payment schedule) applies.
 """
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict
@@ -17,6 +17,7 @@ from sqlalchemy import func
 from app.models import Lead, LeadStage, LeadStatus, Meeting, MeetingStatus, User, WhatsAppChat
 from app.routers.leads import LeadOut, ScheduledMeetingOut, task_extras, _apply_list_filters, _deals_by_lead, _eager_lead, _lead_out
 from app.services.lead_board import apply_board_toggles, board_sort_key, task_state_matches
+from app.services.first_touch import first_touch_at, working_minutes
 from app.services.leads import active_stages
 
 router = APIRouter(prefix="/api/lead-board", tags=["lead-board"])
@@ -33,11 +34,16 @@ class StageOut(BaseModel):
 class CardOut(LeadOut):
     scheduled_meeting: ScheduledMeetingOut | None = None
     whatsapp_unread: int = 0
+    waiting_minutes: int | None = None
 
 
 class BoardOut(BaseModel):
     stages: list[StageOut]
     leads: list[CardOut]
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 def _unread_by_lead(db: Session, lead_ids: list[int]) -> dict[int, int]:
@@ -106,6 +112,10 @@ def get_board(
     leads = sorted(rows, key=lambda lead: board_sort_key(lead, unread.get(lead.id, 0), nxt.get(lead.id)))
     deals = _deals_by_lead(db, [lead.id for lead in leads])
     meetings = _scheduled_meetings(db, [lead.id for lead in leads])
+    now = _now()
+    open_ids = [l.id for l in leads if not (l.stage and (l.stage.is_won or l.stage.is_lost))]
+    open_set = set(open_ids)
+    touched = first_touch_at(db, open_ids)
     cards = []
     for lead in leads:
         meeting = meetings.get(lead.id)
@@ -113,6 +123,8 @@ def get_board(
             **_lead_out(db, lead, deals.get(lead.id)).model_dump(),
             scheduled_meeting=ScheduledMeetingOut.model_validate(meeting) if meeting else None,
             whatsapp_unread=unread.get(lead.id, 0),
+            waiting_minutes=(working_minutes(lead.created_at, now)
+                             if lead.id in open_set and lead.id not in touched else None),
         ))
         cards[-1].next_task = nxt.get(lead.id)
         cards[-1].no_answer_streak = streaks.get(lead.id, 0)

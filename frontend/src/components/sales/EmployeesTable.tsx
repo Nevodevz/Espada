@@ -1,9 +1,11 @@
 "use client";
 
 import { fmtMoneyShort } from "@/lib/format";
+import { formatWaitingMinutes } from "@/lib/waiting";
 import { MEETING_STATUS } from "@/lib/types";
 import type { CloserMetricsRow, CloserOutcome, SetterMetricsRow } from "@/lib/types";
 
+const WORKING_HINT = "В рабочих минутах, 10:00–19:00 пн–пт.";
 const num: React.CSSProperties = { textAlign: "right", fontFamily: "JetBrains Mono, monospace" };
 
 const SETTER_COLS: { key: keyof SetterMetricsRow; label: string; hint: string }[] = [
@@ -41,6 +43,8 @@ export function EmployeesTable({ setters, closers }: { setters: SetterMetricsRow
             <tr>
               <th>Сотрудник</th>
               {SETTER_COLS.map((c) => <th key={c.key} title={c.hint} style={{ textAlign: "right", cursor: "help" }}>{c.label}</th>)}
+              <th title={`Среднее до первого касания лидов сеттера, созданных в периоде. ${WORKING_HINT}`} style={{ textAlign: "right", cursor: "help" }}>Ср. время до касания</th>
+              <th title="Лиды сеттера, созданные в периоде, до которых так и не дотронулись" style={{ textAlign: "right", cursor: "help" }}>Без касания</th>
             </tr>
           </thead>
           <tbody>
@@ -48,6 +52,8 @@ export function EmployeesTable({ setters, closers }: { setters: SetterMetricsRow
               <tr key={r.user_id}>
                 <td>{r.name || "—"}</td>
                 {SETTER_COLS.map((c) => <td key={c.key} style={num}>{r[c.key]}</td>)}
+                <td style={num}>{r.avg_first_touch_minutes == null ? "—" : formatWaitingMinutes(r.avg_first_touch_minutes)}</td>
+                <td style={num}>{r.untouched}</td>
               </tr>
             ))}
             {setters.length === 0 && <EmptyRow />}

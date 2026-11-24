@@ -50,7 +50,7 @@ def test_unclaimed_excludes_taken_and_closed(db, stages, staff):
     rows = unclaimed_leads(db)
     assert [r["id"] for r in rows] == [a.id]
     assert rows[0]["source_name"] == "Instagram"
-    assert set(rows[0]) == {"id", "client_name", "phone", "source_name", "created_at"}
+    assert set(rows[0]) == {"id", "client_name", "phone", "source_name", "created_at", "waiting_minutes"}
 
 
 def test_awaiting_reply_last_inbound_only(db, stages, admin):

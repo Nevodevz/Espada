@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { Button, Card } from "@/components/ui";
-import { formatWaiting } from "@/lib/waiting";
+import { formatWaitingMinutes } from "@/lib/waiting";
 import type { UnclaimedLead } from "@/lib/types";
 
-export function UnclaimedLeadsBlock({ items, now, onTake }: {
-  items: UnclaimedLead[]; now: Date; onTake: (leadId: number) => void;
+export function UnclaimedLeadsBlock({ items, onTake }: {
+  items: UnclaimedLead[]; onTake: (leadId: number) => void;
 }) {
   return (
     <Card padding="16px 18px">
@@ -17,7 +17,7 @@ export function UnclaimedLeadsBlock({ items, now, onTake }: {
           <Link href={`/leads/${l.id}`} style={{ flex: 1, minWidth: 0, fontSize: 13 }}>
             <div style={{ fontWeight: 600 }}>{l.client_name}</div>
             <div style={{ color: "var(--text3)", fontSize: 12 }}>
-              {[l.phone, l.source_name, formatWaiting(l.created_at, now)].filter(Boolean).join(" · ")}
+              {[l.phone, l.source_name, formatWaitingMinutes(l.waiting_minutes)].filter(Boolean).join(" · ")}
             </div>
           </Link>
           <Button variant="primary" onClick={() => onTake(l.id)}>Взять</Button>
