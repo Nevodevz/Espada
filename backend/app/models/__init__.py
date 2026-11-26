@@ -48,6 +48,8 @@ class User(Base):
     is_founder: Mapped[bool] = mapped_column(Boolean, default=False)  # доступ к скрытой части
     # Проводит встречи отдела продаж. Явный признак вместо сравнения строки должности.
     is_closer: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
+    # Telegram @username (without «@») for meeting-reminder mentions.
+    telegram_username: Mapped[str] = mapped_column(String(64), default="", server_default="")
     avatar_color: Mapped[str] = mapped_column(String(20), default="indigo")
     # Relative media path served by backend/nginx, e.g. "/media/avatars/7_a1b2.webp".
     # Empty string = fall back to initials + avatar_color.
@@ -814,6 +816,30 @@ class WhatsAppState(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     state: Mapped[str] = mapped_column(String(16), default="unknown", nullable=False, server_default="unknown")
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class TelegramSettings(Base):
+    """Single row (id=1): Telegram bot and the group chat for meeting reminders."""
+    __tablename__ = "telegram_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
+    bot_token: Mapped[str] = mapped_column(String(100), default="", nullable=False, server_default="")
+    bot_username: Mapped[str] = mapped_column(String(64), default="", nullable=False, server_default="")
+    chat_id: Mapped[str] = mapped_column(String(32), default="", nullable=False, server_default="")
+    chat_title: Mapped[str] = mapped_column(String(200), default="", nullable=False, server_default="")
+    last_error: Mapped[str] = mapped_column(Text, default="", nullable=False, server_default="")
+    last_error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class TelegramSent(Base):
+    """Dedup log of sent reminders: one row per key, so nothing is sent twice."""
+    __tablename__ = "telegram_sent"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 # ── Lead tasks (CRM, not personal boards) ─────────────────────────
