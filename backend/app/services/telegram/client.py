@@ -1,5 +1,9 @@
 """Thin Telegram Bot API client (getMe / getUpdates / sendMessage)."""
+import logging
+
 import httpx
+
+log = logging.getLogger(__name__)
 
 API = "https://api.telegram.org"
 
@@ -11,14 +15,16 @@ class TelegramError(Exception):
 class TelegramClient:
     def __init__(self, token: str, http: httpx.Client | None = None):
         self._token = token
-        self._http = http or httpx.Client(timeout=15.0)
+        self._http = http or httpx.Client(timeout=10.0)
 
     def _call(self, method: str, payload: dict | None = None) -> object:
         url = f"{API}/bot{self._token}/{method}"
         try:
             response = self._http.post(url, json=payload or {})
         except httpx.HTTPError as exc:
-            raise TelegramError(f"Telegram недоступен: {exc}") from exc
+            # httpx errors may embed the URL (and so the bot token): log only the type.
+            log.warning("Telegram request failed: %s", type(exc).__name__)
+            raise TelegramError("Telegram недоступен") from None
         if response.status_code == 401:
             raise TelegramError("Токен не подошёл")
         try:

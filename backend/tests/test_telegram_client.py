@@ -61,5 +61,6 @@ def test_network_error_raises():
     def handler(request):
         raise httpx.ConnectError("boom")
 
-    with pytest.raises(TelegramError):
+    with pytest.raises(TelegramError) as info:
         make(handler).get_me()
+    assert "123:abc" not in str(info.value)
