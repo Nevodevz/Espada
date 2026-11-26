@@ -7,8 +7,9 @@ from app.core.config import settings
 from app.core.security import hash_password
 from app.main import app
 from app.models import (
-    Department, Lead, LeadSource, LeadStatus, Role, User, WhatsAppChat, WhatsAppMessage,
+    Department, Lead, LeadActivity, LeadSource, LeadStatus, Role, User, WhatsAppChat, WhatsAppMessage,
 )
+from app.services.first_touch import first_touch_at
 from app.services.whatsapp import inbound
 from app.services.whatsapp.provider import InboundMessage
 from app.services.whatsapp.runtime import get_provider
@@ -159,6 +160,10 @@ def test_take_lead(client, db, lead, staff, sales, fake):
     assert client.post(f"/api/whatsapp/leads/{lead.id}/take", headers=auth_headers(staff)).status_code == 200
     db.expire_all()
     assert db.get(Lead, lead.id).setter_id == staff.id
+    acts = db.query(LeadActivity).filter_by(lead_id=lead.id, activity_type="taken").all()
+    assert [(a.responsible_id, a.description) for a in acts] == [(staff.id, "Взял лида себе")]
+    # Taking is not a touch: the new-lead timer and metrics ignore it.
+    assert first_touch_at(db, [lead.id]) == {}
 
 
 def test_take_conflict_409(client, db, lead, staff, admin, sales, fake):

@@ -12,8 +12,9 @@ WORK_END_HOUR = 19
 WORK_WEEKDAYS = {0, 1, 2, 3, 4}
 # Activity types that are not a manual touch. `call_result` is still a touch
 # (counted as a call); `created` is the system «Лид создан» row and `note` is an
-# internal note from the composer — neither reaches the client.
-NON_MANUAL_ACTIVITIES = ("stage_change", "call_result", "whatsapp", "created", "note")
+# internal note from the composer — neither reaches the client. `taken` is «Взять себе».
+TAKEN_ACTIVITY = "taken"
+NON_MANUAL_ACTIVITIES = ("stage_change", "call_result", "whatsapp", "created", "note", TAKEN_ACTIVITY)
 
 
 def _aware(value: datetime) -> datetime:
@@ -56,7 +57,7 @@ def is_early(stage_id: int | None, early_ids: set[int]) -> bool:
     return stage_id is None or stage_id in early_ids
 
 
-def _activity_touches(db: Session, *columns):
+def activity_touches(db: Session, *columns):
     """Activities that count as a touch: call results and manual activities by an employee."""
     return (
         db.query(*columns)
@@ -66,7 +67,7 @@ def _activity_touches(db: Session, *columns):
     )
 
 
-def _message_touches(db: Session, *columns):
+def message_touches(db: Session, *columns):
     """Outbound WhatsApp messages sent by an employee in a chat linked to a lead."""
     return (
         db.query(*columns)
@@ -80,8 +81,8 @@ def _message_touches(db: Session, *columns):
 def touch_rows(db: Session, *, start: datetime | None = None, end: datetime | None = None,
                lead_ids: list[int] | None = None) -> list[tuple[int, int, datetime]]:
     """(user_id, lead_id, at) for every touch: call result, manual activity, outbound WhatsApp."""
-    acts = _activity_touches(db, LeadActivity.responsible_id, LeadActivity.lead_id, LeadActivity.created_at)
-    msgs = _message_touches(db, WhatsAppMessage.sender_user_id, WhatsAppChat.lead_id, WhatsAppMessage.sent_at)
+    acts = activity_touches(db, LeadActivity.responsible_id, LeadActivity.lead_id, LeadActivity.created_at)
+    msgs = message_touches(db, WhatsAppMessage.sender_user_id, WhatsAppChat.lead_id, WhatsAppMessage.sent_at)
     if start is not None:
         acts = acts.filter(LeadActivity.created_at >= start)
         msgs = msgs.filter(WhatsAppMessage.sent_at >= start)
@@ -98,9 +99,9 @@ def first_touch_at(db: Session, lead_ids: list[int]) -> dict[int, datetime]:
     """Earliest touch per lead (UTC-aware); leads without touches are absent."""
     if not lead_ids:
         return {}
-    acts = (_activity_touches(db, LeadActivity.lead_id, func.min(LeadActivity.created_at))
+    acts = (activity_touches(db, LeadActivity.lead_id, func.min(LeadActivity.created_at))
             .filter(LeadActivity.lead_id.in_(lead_ids)).group_by(LeadActivity.lead_id).all())
-    msgs = (_message_touches(db, WhatsAppChat.lead_id, func.min(WhatsAppMessage.sent_at))
+    msgs = (message_touches(db, WhatsAppChat.lead_id, func.min(WhatsAppMessage.sent_at))
             .filter(WhatsAppChat.lead_id.in_(lead_ids)).group_by(WhatsAppChat.lead_id).all())
     out: dict[int, datetime] = {}
     for lead_id, at in [*acts, *msgs]:
