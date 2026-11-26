@@ -18,6 +18,9 @@ class FakeClient:
     def __init__(self, sent, fail=None):
         self.sent, self.fail = sent, fail
 
+    def close(self):
+        pass
+
     def send_message(self, chat_id, text):
         if self.fail:
             raise self.fail
@@ -106,6 +109,7 @@ def test_reminder_immediate_and_started(db, tg):
     sent = []
     tick(db, local(10), sent)
     assert len(sent) == 1
+    assert "Через 20 мин" in sent[0][1] and "1,5 часа" not in sent[0][1]
     started = meeting(db, local(9, 0), client_name="Начавшаяся")
     tick(db, local(10), sent)
     assert len(sent) == 1
@@ -176,3 +180,15 @@ def test_disabled_or_unconfigured_sends_nothing(db, tg):
     db.commit()
     tick(db, local(10), sent)
     assert sent == []
+
+
+def test_long_digest_is_split(db, tg):
+    for i in range(60):
+        meeting(db, local(11, i % 60), client_name=f"Клиент номер {i} " + "я" * 40, address="ул. Очень Длинная " * 3)
+    sent = []
+    tick(db, local(10), sent)
+    digests = [t for _, t in sent if "Встречи на сегодня" in t or "Клиент номер" in t]
+    assert len(digests) > 1
+    assert all(len(t) <= 4000 for _, t in sent)
+    assert sum(t.count("Клиент номер") for _, t in sent if "Клиент номер" in t) >= 60
+    assert db.query(TelegramSent).filter_by(key="digest:2026-11-26").count() == 1

@@ -18,6 +18,7 @@ log = logging.getLogger(__name__)
 DIGEST_HOUR = 10
 REMIND_BEFORE = timedelta(minutes=90)
 TICK_SECONDS = 60
+DIGEST_CHUNK_LIMIT = 4000  # Telegram caps a message at 4096
 LOCAL_TZ = timezone(timedelta(hours=6))  # Bishkek, no DST
 
 
@@ -53,20 +54,31 @@ def _who(meeting: Meeting) -> str:
     return " · ".join(parts)
 
 
-def digest_text(meetings: list[Meeting], day: date) -> str:
-    lines = [f"📅 Встречи на сегодня, {day:%d.%m} — {len(meetings)}", ""]
+def digest_chunks(meetings: list[Meeting], day: date, limit: int = DIGEST_CHUNK_LIMIT) -> list[str]:
+    """Digest split at meeting boundaries into messages of at most `limit` characters."""
+    header = f"📅 Встречи на сегодня, {day:%d.%m} — {len(meetings)}\n"
+    chunks: list[str] = []
+    current = header
     for m in sorted(meetings, key=lambda x: _utc(x.meeting_date)):
-        lines.append(f"{_local(m.meeting_date):%H:%M} · {_who(m)} · клоузер {mention(m.closer)}")
         tail = []
         if m.address:
             tail.append(escape(m.address))
         tail.append(f"сеттер {_setter_name(m.setter)}")
-        lines.append("       " + " · ".join(tail))
-    return "\n".join(lines)
+        block = (f"\n{_local(m.meeting_date):%H:%M} · {_who(m)} · клоузер {mention(m.closer)}\n"
+                 + "       " + " · ".join(tail))
+        if len(current) + len(block) > limit and current != header:
+            chunks.append(current)
+            current = block.lstrip("\n")
+        else:
+            current += block
+    chunks.append(current)
+    return chunks
 
 
-def reminder_text(meeting: Meeting) -> str:
-    lines = [f"⏰ Через 1,5 часа встреча — {_local(meeting.meeting_date):%H:%M}", _who(meeting)]
+def reminder_text(meeting: Meeting, now: datetime) -> str:
+    minutes = int((_utc(meeting.meeting_date) - _utc(now)).total_seconds() // 60)
+    head = "Через 1,5 часа" if minutes >= 85 else f"Через {max(minutes, 1)} мин"
+    lines = [f"⏰ {head} встреча — {_local(meeting.meeting_date):%H:%M}", _who(meeting)]
     if meeting.address:
         lines.append(f"Адрес: {escape(meeting.address)}")
     lines.append(f"Клоузер {mention(meeting.closer)} · сеттер {_setter_name(meeting.setter)}")
@@ -74,7 +86,8 @@ def reminder_text(meeting: Meeting) -> str:
     return "\n".join(lines)
 
 
-def _deliver(db: Session, cfg: TelegramSettings, client: TelegramClient, key: str, text: str) -> None:
+def _deliver(db: Session, cfg: TelegramSettings, client: TelegramClient, key: str, text: str | list[str]) -> None:
+    texts = [text] if isinstance(text, str) else text
     db.add(TelegramSent(key=key))
     try:
         db.commit()
@@ -82,7 +95,8 @@ def _deliver(db: Session, cfg: TelegramSettings, client: TelegramClient, key: st
         db.rollback()
         return
     try:
-        client.send_message(cfg.chat_id, text)
+        for part in texts:
+            client.send_message(cfg.chat_id, part)
     except TelegramError as exc:
         db.query(TelegramSent).filter(TelegramSent.key == key).delete()
         cfg.last_error = str(exc)
@@ -101,6 +115,13 @@ def run_due(db: Session, client_factory: Callable[[str], TelegramClient], now: d
         return
     now = _utc(now)
     client = client_factory(cfg.bot_token)
+    try:
+        _run_due(db, cfg, client, now)
+    finally:
+        client.close()
+
+
+def _run_due(db: Session, cfg: TelegramSettings, client: TelegramClient, now: datetime) -> None:
     scheduled = select(Meeting).where(Meeting.status == MeetingStatus.scheduled)
 
     local_now = now.astimezone(LOCAL_TZ)
@@ -112,7 +133,7 @@ def run_due(db: Session, client_factory: Callable[[str], TelegramClient], now: d
             .order_by(Meeting.meeting_date)
         ).all()
         if today:
-            _deliver(db, cfg, client, key, digest_text(list(today), local_now.date()))
+            _deliver(db, cfg, client, key, digest_chunks(list(today), local_now.date()))
 
     upcoming = db.scalars(
         scheduled.where(Meeting.meeting_date > now, Meeting.meeting_date <= now + REMIND_BEFORE)
@@ -125,7 +146,7 @@ def run_due(db: Session, client_factory: Callable[[str], TelegramClient], now: d
         key = f"meeting:{m.id}:{when.isoformat()}"
         if db.query(TelegramSent.id).filter_by(key=key).first() is not None:
             continue
-        _deliver(db, cfg, client, key, reminder_text(m))
+        _deliver(db, cfg, client, key, reminder_text(m, now))
 
 
 def _tick(session_factory) -> None:

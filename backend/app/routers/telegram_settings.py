@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Callable, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -17,6 +17,7 @@ from app.services.telegram.client import TelegramClient, TelegramError
 router = APIRouter(prefix="/api/sales-hub/telegram", tags=["telegram"])
 
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{5,32}$")
+TOKEN_RE = re.compile(r"^\d+:[A-Za-z0-9_-]{30,}$")
 TEST_TEXT = "✅ Тест: напоминания о встречах будут приходить сюда"
 
 
@@ -64,8 +65,8 @@ class TokenIn(BaseModel):
 
 class SettingsIn(BaseModel):
     enabled: Optional[bool] = None
-    chat_id: Optional[str] = None
-    chat_title: Optional[str] = None
+    chat_id: Optional[str] = Field(None, max_length=32)
+    chat_title: Optional[str] = Field(None, max_length=200)
 
 
 class CloserIn(BaseModel):
@@ -87,14 +88,20 @@ def save_token(
     factory: Callable[[str], TelegramClient] = Depends(get_telegram_client_factory),
 ):
     token = body.token.strip()
+    if not TOKEN_RE.match(token):
+        raise HTTPException(422, "Это не похоже на токен бота — скопируйте его из @BotFather")
     try:
-        username = factory(token).get_me()
+        with factory(token) as tg:
+            username = tg.get_me()
     except TelegramError as e:
         raise HTTPException(422, str(e))
     cfg = _cfg(db)
     if token != cfg.bot_token:
         cfg.chat_id = ""
         cfg.chat_title = ""
+        cfg.enabled = False
+        cfg.last_error = ""
+        cfg.last_error_at = None
     cfg.bot_token = token
     cfg.bot_username = username
     cfg.updated_at = datetime.now(timezone.utc)
@@ -112,7 +119,8 @@ def find_groups(
     if not cfg.bot_token:
         raise HTTPException(422, "Сначала сохраните токен бота")
     try:
-        return factory(cfg.bot_token).find_groups()
+        with factory(cfg.bot_token) as tg:
+            return tg.find_groups()
     except TelegramError as e:
         raise HTTPException(422, str(e))
 
@@ -148,9 +156,14 @@ def send_test(
     if not (cfg.bot_token and cfg.chat_id):
         raise HTTPException(422, "Сначала подключите бота и выберите группу")
     try:
-        factory(cfg.bot_token).send_message(cfg.chat_id, TEST_TEXT)
+        with factory(cfg.bot_token) as tg:
+            tg.send_message(cfg.chat_id, TEST_TEXT)
     except TelegramError as e:
         raise HTTPException(422, str(e))
+    if cfg.last_error or cfg.last_error_at:
+        cfg.last_error = ""
+        cfg.last_error_at = None
+        db.commit()
     return {"ok": True}
 
 

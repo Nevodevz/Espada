@@ -57,6 +57,7 @@ export function TelegramSettingsModal({ open, onClose }: { open: boolean; onClos
 
   useEffect(() => {
     if (!open) return;
+    setCfg(null);
     setGroups(null);
     setToken("");
     telegramApi.get().then(setCfg).catch((e) => toast(e.message || "Не удалось загрузить настройки", "error"));
@@ -100,7 +101,7 @@ export function TelegramSettingsModal({ open, onClose }: { open: boolean; onClos
             <div style={{ display: "flex", gap: 8 }}>
               <div style={{ flex: 1 }}>
                 <Input
-                  value={token} aria-label="Токен бота"
+                  value={token} type="password" aria-label="Токен бота"
                   placeholder={cfg.token_tail ? `•••• ${cfg.token_tail}` : "Токен от @BotFather"}
                   onChange={(e) => setToken(e.target.value)}
                 />
@@ -116,7 +117,7 @@ export function TelegramSettingsModal({ open, onClose }: { open: boolean; onClos
           <div style={section}>
             <div style={sectionTitle}>2. Группа</div>
             <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 8 }}>
-              Добавьте бота в группу и напишите там любое сообщение, затем нажмите «Найти группы».
+              Добавьте бота в группу (если он уже там — удалите и добавьте заново), затем нажмите «Найти группы».
             </div>
             {hasGroup && <div style={{ fontSize: 13, marginBottom: 8 }}>Выбрана группа: <b>{cfg.chat_title || cfg.chat_id}</b></div>}
             <div style={{ display: "flex", gap: 8 }}>
@@ -124,7 +125,7 @@ export function TelegramSettingsModal({ open, onClose }: { open: boolean; onClos
                 onClick={() => run(async () => {
                   const found = await telegramApi.findGroups();
                   setGroups(found);
-                  if (!found.length) toast("Групп не найдено. Напишите сообщение в группе с ботом и повторите", "info");
+                  if (!found.length) toast("Групп не найдено — добавьте бота в группу заново и повторите.", "info");
                 })}>
                 Найти группы
               </Button>

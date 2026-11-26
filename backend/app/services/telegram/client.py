@@ -4,6 +4,8 @@ import logging
 import httpx
 
 log = logging.getLogger(__name__)
+# httpx logs request URLs at INFO, and the URL contains the bot token.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 API = "https://api.telegram.org"
 
@@ -16,6 +18,15 @@ class TelegramClient:
     def __init__(self, token: str, http: httpx.Client | None = None):
         self._token = token
         self._http = http or httpx.Client(timeout=10.0)
+
+    def close(self) -> None:
+        self._http.close()
+
+    def __enter__(self) -> "TelegramClient":
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()
 
     def _call(self, method: str, payload: dict | None = None) -> object:
         url = f"{API}/bot{self._token}/{method}"

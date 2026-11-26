@@ -59,8 +59,14 @@ def test_send_message_posts_html():
 
 def test_network_error_raises():
     def handler(request):
-        raise httpx.ConnectError("boom")
+        raise httpx.ConnectError("failed https://api.telegram.org/bot123:abc/getMe")
 
     with pytest.raises(TelegramError) as info:
         make(handler).get_me()
     assert "123:abc" not in str(info.value)
+
+
+def test_close_closes_http_client():
+    http = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, json={"ok": True})))
+    TelegramClient("123:abc", http=http).close()
+    assert http.is_closed
