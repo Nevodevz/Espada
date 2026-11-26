@@ -597,6 +597,18 @@ export const salesHubApi = {
   },
 };
 
+export const telegramApi = {
+  get: () => request<import("./types").TelegramSettings>("/sales-hub/telegram"),
+  saveToken: (token: string) =>
+    request<import("./types").TelegramSettings>("/sales-hub/telegram/token", { method: "PUT", body: JSON.stringify({ token }) }),
+  findGroups: () => request<import("./types").TelegramGroup[]>("/sales-hub/telegram/groups", { method: "POST" }),
+  update: (patch: { enabled?: boolean; chat_id?: string; chat_title?: string }) =>
+    request<import("./types").TelegramSettings>("/sales-hub/telegram", { method: "PUT", body: JSON.stringify(patch) }),
+  sendTest: () => request<{ ok: boolean }>("/sales-hub/telegram/test", { method: "POST" }),
+  saveCloser: (userId: number, telegram_username: string) =>
+    request<{ id: number; telegram_username: string }>(`/sales-hub/telegram/closers/${userId}`, { method: "PUT", body: JSON.stringify({ telegram_username }) }),
+};
+
 export const whatsappApi = {
   access: () => request<{ can_use: boolean }>("/whatsapp/access"),
   status: () => request<import("./types").WhatsAppStatus>("/whatsapp/status"),
