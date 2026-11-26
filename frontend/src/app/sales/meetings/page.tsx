@@ -3,12 +3,13 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Shell } from "@/components/Shell";
-import { Card } from "@/components/ui";
+import { Button, Card } from "@/components/ui";
+import { TelegramSettingsModal } from "@/components/sales/TelegramSettingsModal";
 import { MeetingsTable } from "@/components/meetings/MeetingsTable";
 import { SalesMeetingsCalendar } from "@/components/meetings/SalesMeetingsCalendar";
 import { useApp } from "@/context/AppContext";
 import { api } from "@/lib/api";
-import { isCloser } from "@/lib/roles";
+import { isCloser, isSalesHead } from "@/lib/roles";
 import type { Department, UserWithStats } from "@/lib/types";
 
 type View = "calendar" | "table";
@@ -23,6 +24,7 @@ function MeetingsPageInner() {
   const [currentUser, setCurrentUser] = useState<UserWithStats | undefined>();
   const [allUsers, setAllUsers] = useState<UserWithStats[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [tgOpen, setTgOpen] = useState(false);
 
   useEffect(() => {
     api.getDepartment("sales").then(setDept).catch((e: Error) => setError(e.message || "Не удалось загрузить отдел продаж"));
@@ -42,6 +44,9 @@ function MeetingsPageInner() {
     <Shell title="Отдел продаж">
       <div className="page-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <div className="page-h1">Встречи</div>
+        {user && isSalesHead(user) && (
+          <Button variant="ghost" icon="send" onClick={() => setTgOpen(true)}>Напоминания в Telegram</Button>
+        )}
         <div style={{ display: "flex", gap: 4, background: "var(--bg3)", borderRadius: 8, padding: 3 }}>
           {(["calendar", "table"] as const).map((v) => (
             <button key={v} onClick={() => setView(v)} aria-pressed={view === v}
@@ -66,6 +71,7 @@ function MeetingsPageInner() {
       {ready && view === "table" && (
         <MeetingsTable allUsers={allUsers} currentUser={currentUser} isAdmin={isAdmin} maxHeight={620} />
       )}
+      <TelegramSettingsModal open={tgOpen} onClose={() => setTgOpen(false)} />
     </Shell>
   );
 }

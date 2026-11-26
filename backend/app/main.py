@@ -16,7 +16,7 @@ from app.middleware import last_seen_middleware
 from app.routers import (
     auth, users, projects, tasks, departments, boards, sales, marketing,
     search, notifications, meetings, bug_reports, leads, finance, payroll, analytics,
-    api_keys, lab_projects, lead_board, lead_tasks, sales_hub, whatsapp, calendar as calendar_router,
+    api_keys, lab_projects, lead_board, lead_tasks, sales_hub, telegram_settings, whatsapp, calendar as calendar_router,
 )
 from app.routers import settings as settings_router
 
@@ -37,7 +37,11 @@ async def lifespan(app: FastAPI):
         poller = asyncio.gather(
             poll_state_forever(SessionLocal), catch_up_forever(SessionLocal), return_exceptions=True,
         )
+    from app.core.database import SessionLocal as _TgSession
+    from app.services.telegram.meeting_reminders import telegram_forever
+    telegram = asyncio.create_task(telegram_forever(_TgSession))
     yield
+    telegram.cancel()
     if poller:
         poller.cancel()
 
@@ -88,6 +92,7 @@ app.include_router(calendar_router.router)
 app.include_router(whatsapp.router)
 app.include_router(lead_tasks.router)
 app.include_router(sales_hub.router)
+app.include_router(telegram_settings.router)
 
 # Uploaded media (avatars). In production nginx serves this path directly and
 # never reaches the app; the mount keeps local development working.

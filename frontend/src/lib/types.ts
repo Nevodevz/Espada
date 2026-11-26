@@ -1216,3 +1216,25 @@ export interface SalesMetricsQuery {
   service_id?: number;
   user_id?: number;
 }
+
+export interface TelegramCloser {
+  id: number;
+  name: string;
+  telegram_username: string;
+}
+
+export interface TelegramSettings {
+  enabled: boolean;
+  token_tail: string;
+  bot_username: string;
+  chat_id: string;
+  chat_title: string;
+  last_error: string;
+  last_error_at: string | null;
+  closers: TelegramCloser[];
+}
+
+export interface TelegramGroup {
+  id: string;
+  title: string;
+}
