@@ -17,6 +17,8 @@ from app.core.database import get_db
 from app.core.deps import get_current_user, require_admin
 from app.models import Lead, LeadStatus, User, WhatsAppChat, WhatsAppMessage, WhatsAppState
 from app.schemas import UserOut
+from app.services.first_touch import TAKEN_ACTIVITY
+from app.services.leads import create_lead_activity
 from app.services.lead_tasks import cancel_open_tasks
 from app.services.whatsapp.access import can_use_whatsapp
 from app.services.whatsapp.catchup import catch_up
@@ -417,6 +419,8 @@ def take_lead(lead_id: int, db: Session = Depends(get_db), user: User = Depends(
     lead = _lead(db, lead_id)
     if lead.setter_id not in (None, user.id):
         raise HTTPException(409, "У лида уже есть сеттер")
+    if lead.setter_id is None:
+        create_lead_activity(db, lead.id, TAKEN_ACTIVITY, description="Взял лида себе", responsible_id=user.id)
     lead.setter_id = user.id
     db.commit()
     return {"lead_id": lead.id, "setter_id": user.id}

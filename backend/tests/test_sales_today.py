@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app.models import (Department, Lead, LeadSource, LeadStatus, WhatsAppChat,
+from app.models import (Department, Lead, LeadActivity, LeadSource, LeadStatus, WhatsAppChat,
                         WhatsAppMessage)
 from app.services.sales_today import awaiting_reply, unclaimed_leads
 from tests.conftest import auth_headers
@@ -31,8 +31,9 @@ def mk_chat(db, lead, msgs, n=[0]):
     c = WhatsAppChat(remote_jid=f"99670{n[0]:07d}@s.whatsapp.net", lead_id=lead.id if lead else None)
     db.add(c)
     db.flush()
-    for i, (direction, body) in enumerate(msgs):
+    for i, (direction, body, *sender) in enumerate(msgs):
         db.add(WhatsAppMessage(chat_id=c.id, direction=direction, body=body,
+                               sender_user_id=sender[0] if sender else None,
                                sent_at=T0 + timedelta(minutes=i)))
     db.commit()
     return c
@@ -53,11 +54,11 @@ def test_unclaimed_excludes_taken_and_closed(db, stages, staff):
     assert set(rows[0]) == {"id", "client_name", "phone", "source_name", "created_at", "waiting_minutes"}
 
 
-def test_awaiting_reply_last_inbound_only(db, stages, admin):
+def test_awaiting_reply_last_inbound_only(db, stages, admin, staff):
     l1 = mk_lead(db, stages["Созвон"], client_name="A")
     l2 = mk_lead(db, stages["Созвон"], client_name="B")
-    mk_chat(db, l1, [("out", "hi"), ("in", "привет")])
-    mk_chat(db, l2, [("in", "привет"), ("out", "шаблон")])
+    mk_chat(db, l1, [("out", "hi", staff.id), ("in", "привет")])
+    mk_chat(db, l2, [("in", "привет"), ("out", "шаблон", staff.id)])
     rows = awaiting_reply(db, admin)
     assert [r["lead_id"] for r in rows] == [l1.id]
     assert rows[0]["last_body"] == "привет"
@@ -102,3 +103,42 @@ def test_today_endpoint(client, db, stages, staff, sales):
 
 def test_today_forbidden_for_non_sales(client, staff):
     assert client.get("/api/sales-hub/today", headers=auth_headers(staff)).status_code == 403
+
+
+def add_activity(db, lead, kind, minutes, user):
+    db.add(LeadActivity(lead_id=lead.id, activity_type=kind, responsible_id=user.id,
+                        created_at=T0 + timedelta(minutes=minutes)))
+    db.commit()
+
+
+def test_bot_reply_keeps_lead_awaiting(db, stages, admin):
+    """An outbound message without an employee (bot or phone) is not an answer."""
+    l = mk_lead(db, stages["Созвон"])
+    mk_chat(db, l, [("in", "сколько стоит?"), ("out", "Здравствуйте! Я бот")])
+    rows = awaiting_reply(db, admin)
+    assert [r["lead_id"] for r in rows] == [l.id]
+    assert rows[0]["last_body"] == "сколько стоит?"
+
+
+def test_call_after_message_answers_lead(db, stages, admin, staff):
+    called = mk_lead(db, stages["Созвон"])
+    mk_chat(db, called, [("in", "алло")])
+    add_activity(db, called, "call_result", 5, staff)
+    earlier = mk_lead(db, stages["Созвон"])
+    add_activity(db, earlier, "call_result", -5, staff)
+    mk_chat(db, earlier, [("in", "перезвоните")])
+    assert [r["lead_id"] for r in awaiting_reply(db, admin)] == [earlier.id]
+
+
+def test_taking_lead_answers_it(db, stages, admin, staff):
+    l = mk_lead(db, stages["Новый лид"])
+    mk_chat(db, l, [("in", "здравствуйте")])
+    add_activity(db, l, "taken", 5, staff)
+    assert awaiting_reply(db, admin) == []
+
+
+def test_note_does_not_answer_lead(db, stages, admin, staff):
+    l = mk_lead(db, stages["Созвон"])
+    mk_chat(db, l, [("in", "?")])
+    add_activity(db, l, "note", 5, staff)
+    assert [r["lead_id"] for r in awaiting_reply(db, admin)] == [l.id]
