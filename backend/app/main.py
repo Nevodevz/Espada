@@ -37,7 +37,11 @@ async def lifespan(app: FastAPI):
         poller = asyncio.gather(
             poll_state_forever(SessionLocal), catch_up_forever(SessionLocal), return_exceptions=True,
         )
+    from app.core.database import SessionLocal as _TgSession
+    from app.services.telegram.meeting_reminders import telegram_forever
+    telegram = asyncio.create_task(telegram_forever(_TgSession))
     yield
+    telegram.cancel()
     if poller:
         poller.cancel()
 
